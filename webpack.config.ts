@@ -48,15 +48,25 @@ function sanitizeEntryKey(pkgName: string): string {
 // ---------------------------------------------------------------------------
 // Build the entries map
 // ---------------------------------------------------------------------------
-const entries: Record<string, string> = {};
+const entries: webpack.EntryObject = {};
 
-entries.n8n = path.resolve(ROOT, "node_modules/n8n/bin/n8n");
+entries.n8n = {
+  import: [path.resolve(ROOT, "node_modules/n8n/bin/n8n")],
+  filename: "n8n.mjs",
+};
 
 for (const depName of Object.keys(n8nPkg.dependencies || {})) {
   const mainFile = resolvePackageMain(depName);
   if (mainFile) {
     const key = sanitizeEntryKey(depName);
-    entries[key] = mainFile;
+    entries[key] = { import: [mainFile] };
+  }
+}
+
+{
+  const mainFile = resolvePackageMain("prettier");
+  if (mainFile) {
+    entries.prettier = { import: [mainFile] };
   }
 }
 
@@ -95,13 +105,67 @@ const config: webpack.Configuration = {
 
   module: {
     rules: [
-      // Native .node addons — copy into dist/node_modules as assets
+      // Dependencies calling fs.readFileSync(__dirname + path) are invisible
+      // to webpack's static analysis.  Convert them to require() calls so the
+      // .wasm asset rule below can emit the file.
       {
-        test: /\.node$/,
+        test: /\.js$/,
+        include: /node_modules/,
+        enforce: "pre",
+        use: {
+          loader: "string-replace-loader",
+          options: {
+            multiple: [
+              {
+                // brotli-wasm: convert readFileSync / __dirname to static require() so webpack
+                // can emit the .wasm asset.
+                search:
+                  /const\s+path\s*=\s*require\(['"]path['"]\)\s*\.\s*join\s*\(\s*__dirname\s*,\s*['"]([^'"]+\.wasm)['"]\s*\)\s*;\s*const\s+bytes\s*=\s*require\(['"]fs['"]\)\s*\.\s*readFileSync\s*\(\s*path\s*\)\s*;/g,
+                replace:
+                  'const bytes = require("fs").readFileSync(require("./$1"));',
+              },
+              {
+                // sqlite3: convert bindings() dynamic loading to static require() so
+                // webpack's .node asset rule can emit the native addon.
+                search:
+                  /module\.exports\s*=\s*require\(['"]bindings['"]\)\s*\(\s*['"]node_sqlite3\.node['"]\s*\)/g,
+                replace:
+                  'module.exports = require("../build/Release/node_sqlite3.node")',
+              },
+            ],
+          },
+        },
+      },
+      // Cannot use content-hash filenames for .wasm — runtime callers do
+      // fs.readFileSync(__dirname + '/original_name.wasm') and skip webpack's
+      // module resolution.
+      {
+        test: /\.wasm$/,
         type: "asset/resource",
         generator: {
-          filename: "node_modules/[name]-[contenthash:8][ext]",
+          filename: "node_modules/[name][ext]",
         },
+      },
+      // Prebuilt native addons.  Keep only linux-x64 binaries; stub
+      // the rest so packages (Sentry) that statically require() every
+      // platform variant don't cause webpack parse errors.
+      {
+        test: /\.node$/,
+        oneOf: [
+          {
+            resource: (absPath: string): boolean =>
+              !/(?:^|[\\/-])(?:darwin|win32|freebsd|sunos|aix|android|linux-arm64)(?:[\\/.-]|$)/i.test(
+                absPath,
+              ),
+            type: "asset/resource",
+            generator: {
+              filename: "node_modules/[name]-[contenthash:8][ext]",
+            },
+          },
+          {
+            use: path.resolve(ROOT, "stubs/null-loader.js"),
+          },
+        ],
       },
       // Type declaration files — not needed at runtime
       {

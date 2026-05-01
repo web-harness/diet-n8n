@@ -25,6 +25,8 @@
     "@types/webpack": "^5.28.5",
     "fakettp": "^1.9.4",
     "n8n": "^2.18.5",
+    "prettier": "^3.8.3",
+    "string-replace-loader": "^3.3.0",
     "tsx": "^4.21.0",
     "webpack": "^5.106.2",
     "webpack-cli": "^7.0.2"
