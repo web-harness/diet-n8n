@@ -18,9 +18,22 @@
   },
   "homepage": "https://github.com/web-harness/diet-n8n#readme",
   "devDependencies": {
+    "@types/node": "^25.6.0",
     "@types/webpack": "^5.28.5",
+    "browserify-zlib": "^0.2.0",
+    "console-browserify": "^1.2.0",
+    "constants-browserify": "^1.0.0",
+    "crypto-browserify": "^3.12.1",
+    "domain-browser": "^5.7.0",
+    "fakettp": "^1.9.4",
     "n8n": "^2.18.5",
+    "net-browserify": "^0.2.4",
+    "os-browserify": "^0.3.0",
+    "querystring-es3": "^0.2.1",
+    "timers-browserify": "^2.0.12",
     "tsx": "^4.21.0",
+    "url": "^0.11.4",
+    "vm-browserify": "^1.1.2",
     "webpack": "^5.106.2",
     "webpack-cli": "^7.0.2"
   }
