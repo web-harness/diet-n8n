@@ -1,0 +1,27 @@
+{
+  "name": "diet-n8n",
+  "version": "1.0.0",
+  "description": "n8n recompiled for browser.",
+  "main": "index.js",
+  "scripts": {
+    "test": "exit 0"
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/web-harness/diet-n8n.git"
+  },
+  "keywords": [],
+  "author": "",
+  "license": "MIT",
+  "bugs": {
+    "url": "https://github.com/web-harness/diet-n8n/issues"
+  },
+  "homepage": "https://github.com/web-harness/diet-n8n#readme",
+  "devDependencies": {
+    "@types/webpack": "^5.28.5",
+    "n8n": "^2.18.5",
+    "tsx": "^4.21.0",
+    "webpack": "^5.106.2",
+    "webpack-cli": "^7.0.2"
+  }
+}
