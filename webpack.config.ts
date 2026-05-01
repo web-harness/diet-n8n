@@ -1,19 +1,76 @@
+import fs from 'fs';
 import path from 'path';
 import webpack from 'webpack';
 
 const ROOT = process.cwd();
 
+// ---------------------------------------------------------------------------
+// Dynamically read n8n's dependencies from its package.json
+// ---------------------------------------------------------------------------
+const n8nPkgPath = path.resolve(ROOT, 'node_modules/n8n/package.json');
+const n8nPkg = JSON.parse(fs.readFileSync(n8nPkgPath, 'utf-8'));
+
+/**
+ * Resolve a package's main entry file by reading its package.json.
+ * Falls back to index.js if no "main" field is declared.
+ */
+function resolvePackageMain(pkgName: string): string | null {
+  const pkgDir = path.resolve(ROOT, 'node_modules', pkgName);
+  const pkgJsonPath = path.join(pkgDir, 'package.json');
+  if (!fs.existsSync(pkgJsonPath)) return null;
+
+  try {
+    const pkg = JSON.parse(fs.readFileSync(pkgJsonPath, 'utf-8'));
+    const mainRel = pkg.main || 'index.js';
+    const mainAbs = path.resolve(pkgDir, mainRel);
+
+    if (fs.existsSync(mainAbs)) return mainAbs;
+    const withJs = mainAbs + (path.extname(mainAbs) ? '' : '.js');
+    if (fs.existsSync(withJs)) return withJs;
+    return null;
+  } catch {
+    return null;
+  }
+}
+
+/**
+ * Sanitize a package name into a safe webpack entry / chunk key.
+ * "@scope/name"  → "scope__name"
+ * "name"         → "name"
+ */
+function sanitizeEntryKey(pkgName: string): string {
+  return pkgName.replace(/^@/, '').replace(/\//g, '__');
+}
+
+// ---------------------------------------------------------------------------
+// Build the entries map
+// ---------------------------------------------------------------------------
+const entries: Record<string, string> = {};
+
+entries['n8n'] = path.resolve(ROOT, 'node_modules/n8n/bin/n8n');
+
+for (const depName of Object.keys(n8nPkg.dependencies || {})) {
+  const mainFile = resolvePackageMain(depName);
+  if (mainFile) {
+    const key = sanitizeEntryKey(depName);
+    entries[key] = mainFile;
+  }
+}
+
+// ---------------------------------------------------------------------------
+// Webpack configuration
+// ---------------------------------------------------------------------------
 const config: webpack.Configuration = {
   mode: 'development',
   devtool: 'source-map',
 
-  entry: path.resolve(ROOT, 'node_modules/n8n/bin/n8n'),
+  entry: entries,
 
   target: ['web', 'es2020'],
 
   output: {
     path: path.resolve(ROOT, 'dist'),
-    filename: 'n8n-bundle.js',
+    filename: 'node_modules/[name].js',
     chunkFilename: 'node_modules/[name]-[contenthash:8].js',
     library: { type: 'module' },
     chunkFormat: 'module',
@@ -26,13 +83,17 @@ const config: webpack.Configuration = {
   },
 
   resolve: {
-    extensions: ['.js', '.ts', '.mjs', '.cjs', '.json'],
+    extensions: ['.js', '.mjs', '.cjs', '.json'],
+    conditionNames: ['node', 'import', 'require', 'module', 'webpack', 'development', 'browser'],
     fallback: {
       assert: false,
+      async_hooks: false,
       buffer: false,
       child_process: false,
+      cluster: false,
       constants: false,
       crypto: false,
+      diagnostics_channel: false,
       dgram: false,
       dns: false,
       events: false,
@@ -63,7 +124,9 @@ const config: webpack.Configuration = {
       'node:async_hooks': false,
       'node:buffer': false,
       'node:child_process': false,
+      'node:cluster': false,
       'node:crypto': false,
+      'node:diagnostics_channel': false,
       'node:dns': false,
       'node:events': false,
       'node:fs': false,
@@ -83,7 +146,41 @@ const config: webpack.Configuration = {
       'node:util': false,
       'node:worker_threads': false,
       'node:zlib': false,
+      bufferutil: false,
+      canvas: false,
+      pg: false,
+      'pg-native': false,
+      'pg-query-stream': false,
+      prettier: false,
+      'utf-8-validate': false,
+      'word-extractor': false,
+      zipfile: false,
     },
+  },
+
+  module: {
+    rules: [
+      {
+        test: /\.node$/,
+        type: 'javascript/auto',
+        use: path.resolve(ROOT, 'stubs/node-addon-loader.js'),
+      },
+      {
+        test: /\.d\.(ts|mts)$/,
+        type: 'javascript/auto',
+        use: path.resolve(ROOT, 'stubs/null-loader.js'),
+      },
+      {
+        test: /\.(md|markdown|txt)$/i,
+        type: 'javascript/auto',
+        use: path.resolve(ROOT, 'stubs/null-loader.js'),
+      },
+      {
+        test: /(^|[\\/])(LICENSE|README|CHANGELOG|NOTICE)(\.[a-z]+)?$/i,
+        type: 'javascript/auto',
+        use: path.resolve(ROOT, 'stubs/null-loader.js'),
+      },
+    ],
   },
 
   plugins: [
@@ -98,6 +195,7 @@ const config: webpack.Configuration = {
   ],
 
   optimization: {
+    runtimeChunk: 'single',
     splitChunks: {
       chunks: 'all',
       cacheGroups: {
@@ -105,7 +203,8 @@ const config: webpack.Configuration = {
           test: /[\\/]node_modules[\\/]/,
           name: 'vendor',
           chunks: 'all',
-          filename: 'node_modules/vendor-[contenthash:8].js',
+          priority: -10,
+          reuseExistingChunk: true,
         },
       },
     },
