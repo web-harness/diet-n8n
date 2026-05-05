@@ -11,9 +11,7 @@ RUN set -e && set -o pipefail && \
 WORKDIR /app
 
 # T1: Install n8n
-COPY package.json package-lock.json ./
-RUN set -e && set -o pipefail && \
-    npm install
+RUN npm init -y && npm install n8n --omit=dev --no-audit --no-fund
 
 # T2: .node pruning
 # Find + file -b, remove non-x86-64, log each as "REMOVED arch: path"

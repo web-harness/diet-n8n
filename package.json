@@ -1,0 +1,33 @@
+{
+  "name": "diet-n8n",
+  "version": "1.0.0",
+  "description": "n8n recompiled for tight environments.",
+  "main": "index.js",
+  "bin": {
+    "diet-n8n": "index.js"
+  },
+  "files": [
+    "index.js",
+    "extract.js",
+    "dist/"
+  ],
+  "scripts": {
+    "postinstall": "node extract.js",
+    "test": "exit 0"
+  },
+  "dependencies": {
+    "tar-fs": "^3.1.2",
+    "xz-decompress": "^0.2.3"
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/web-harness/diet-n8n.git"
+  },
+  "keywords": [],
+  "author": "Sepehr Laal",
+  "license": "MIT",
+  "bugs": {
+    "url": "https://github.com/web-harness/diet-n8n/issues"
+  },
+  "homepage": "https://github.com/web-harness/diet-n8n#readme"
+}
