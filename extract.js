@@ -9,8 +9,15 @@ const { XzReadableStream } = require('xz-decompress');
 const tar = require('tar-fs');
 
 const DEST_DIR = process.argv[2] || __dirname;
-const CHUNKS_DIR = path.join(__dirname, 'dist', 'chunks');
-const SUMS_FILE = path.join(__dirname, 'dist', 'sha256sums.txt');
+function resolvePath(rel) {
+  const distPath = path.join(__dirname, 'dist', rel);
+  if (fs.existsSync(distPath)) return distPath;
+  const directPath = path.join(__dirname, rel);
+  if (fs.existsSync(directPath)) return directPath;
+  return directPath; // Default to pkg context
+}
+const CHUNKS_DIR = resolvePath('chunks');
+const SUMS_FILE = resolvePath('sha256sums.txt');
 const N8N_MARKER = path.join(DEST_DIR, 'node_modules', 'n8n', 'package.json');
 
 if (fs.existsSync(N8N_MARKER)) {

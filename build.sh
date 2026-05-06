@@ -15,6 +15,8 @@ Requires Docker. The script:
   2. Splits output into chunks in dist/chunks/
   3. Generates SHA256 checksums for every chunk
   4. Verifies all checksums
+  5. Bundles extract.js with esbuild
+  6. Generates dist/package.json
 
 Options:
   --help    Show this help message and exit
@@ -65,3 +67,27 @@ else
     echo "==> ERROR: Checksum verification failed!"
     exit 1
 fi
+
+echo ""
+echo "==> Bundling extract.js with esbuild ..."
+npx esbuild "$SCRIPT_DIR/extract.js" --bundle --platform=node --format=cjs --outfile="$SCRIPT_DIR/dist/extract.js" --minify
+chmod +x "$SCRIPT_DIR/dist/extract.js"
+echo "  dist/extract.js bundled successfully."
+
+echo "==> Generating dist/package.json ..."
+VERSION=$(node -p "require('$SCRIPT_DIR/package.json').version")
+cat > "$SCRIPT_DIR/dist/package.json" << JSONEOF
+{
+  "name": "diet-n8n",
+  "version": "${VERSION}",
+  "bin": {
+    "diet-n8n": "./node_modules/n8n/bin/n8n"
+  },
+  "scripts": {
+    "postinstall": "node extract.js"
+  },
+  "os": ["linux"],
+  "cpu": ["x64"]
+}
+JSONEOF
+echo "  dist/package.json generated (version: ${VERSION})."

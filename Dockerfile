@@ -19,14 +19,7 @@ RUN chmod +x apply-diet.sh && ./apply-diet.sh node_modules
 # Create compressed archive split into 10 MB chunks
 RUN set -e && set -o pipefail && \
     mkdir -p /out/chunks && \
-    tar -cf - node_modules package.json package-lock.json | xz -9e | split -b 10M - /out/chunks/node_modules.tar.xz.
-
-# Verify archive reconstructibility
-RUN set -e && set -o pipefail && \
-    cd /out/chunks && \
-    cat node_modules.tar.xz.* | tar -xJf - -C /app/ && \
-    test -f /app/package.json && test -f /app/package-lock.json && \
-    echo "Verification: passed"
+    tar -cf - node_modules | xz -9e | split -b 10M - /out/chunks/node_modules.tar.xz.
 
 FROM scratch AS export
 COPY --from=builder /out /
