@@ -14,26 +14,10 @@ n8n repackaged for tight environments.
 npm install diet-n8n
 ```
 
-Sample bare minimum launch:
+Sample bare minimum, **insecure**, and sandbox launch with [minimal.env](minimal.env):
 
 ```sh
-N8N_PORT=5678 \
-N8N_EDITOR_BASE_URL=http://localhost:5678 \
-N8N_HOST=localhost \
-N8N_PROTOCOL=http \
-N8N_LISTEN_ADDRESS=0.0.0.0 \
-N8N_DIAGNOSTICS_ENABLED=false \
-N8N_VERSION_NOTIFICATIONS_ENABLED=false \
-N8N_TEMPLATES_ENABLED=false \
-N8N_PERSONALIZATION_ENABLED=false \
-N8N_HIRING_BANNER_ENABLED=false \
-N8N_METRICS=false \
-N8N_DISABLED_MODULES=insights \
-N8N_NATIVE_PYTHON_RUNNER=false \
-N8N_PUBLIC_API_DISABLED=true \
-N8N_PUBLIC_API_SWAGGERUI_DISABLED=true \
-N8N_REINSTALL_MISSING_PACKAGES=false \
-npx n8n
+npx -y dotenv-cli -e minimal.env n8n
 ```
 
 To automate the first time admin user creation:
@@ -48,6 +32,8 @@ curl -X POST http://localhost:5678/rest/owner \
     "password": "21JumpStreet"
   }'
 ```
+
+Tune [minimal.env](minimal.env) further according to the [official documentation](https://docs.n8n.io/hosting/configuration/environment-variables/) to suit your setup.
 
 ## Synopsis
 

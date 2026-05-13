@@ -15,7 +15,7 @@ Requires Docker. The script:
   2. Splits output into chunks in dist/chunks/
   3. Generates SHA256 checksums for every chunk
   4. Verifies all checksums
-  5. Bundles extract.js with esbuild
+  5. Bundles extract.ts with esbuild
   6. Generates dist/package.json
 
 Options:
@@ -69,9 +69,9 @@ else
 fi
 
 echo ""
-echo "==> Bundling extract.js with esbuild ..."
-npx esbuild "$SCRIPT_DIR/extract.js" --bundle --platform=node --format=cjs --outfile="$SCRIPT_DIR/dist/extract.js" --minify
-chmod +x "$SCRIPT_DIR/dist/extract.js"
+echo "==> Bundling extract.ts with esbuild ..."
+npx esbuild "$SCRIPT_DIR/extract.ts" --bundle --platform=node --format=cjs --outfile="$SCRIPT_DIR/dist/extract.js" --minify
+chmod +x "$SCRIPT_DIR/dist/extract.ts"
 echo "  dist/extract.js bundled successfully."
 
 echo "==> Generating dist/package.json ..."
