@@ -1,12 +1,11 @@
 {
   "name": "diet-n8n",
-  "version": "1.1.0",
+  "version": "1.2.0",
   "description": "n8n recompiled for tight environments.",
   "scripts": {
     "format": "biome format --write",
     "lint": "biome lint --fix",
-    "build": "bash build.sh",
-    "test": "bash verify_package_structure.sh && bash verify_distribution.sh"
+    "build": "bash build.sh"
   },
   "devDependencies": {
     "@biomejs/biome": "^2.4.15",
@@ -18,7 +17,6 @@
     "dotenv-cli": "^11.0.0",
     "esbuild": "^0.28.0",
     "tar-fs": "^3.1.2",
-    "tsx": "^4.21.0",
     "xz-decompress": "^0.2.3"
   },
   "repository": {

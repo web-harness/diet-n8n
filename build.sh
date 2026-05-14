@@ -71,7 +71,7 @@ fi
 echo ""
 echo "==> Bundling extract.ts with esbuild ..."
 npx esbuild "$SCRIPT_DIR/extract.ts" --bundle --platform=node --format=cjs --outfile="$SCRIPT_DIR/dist/extract.js" --minify
-chmod +x "$SCRIPT_DIR/dist/extract.ts"
+chmod +x "$SCRIPT_DIR/dist/extract.js"
 echo "  dist/extract.js bundled successfully."
 
 echo "==> Generating dist/package.json ..."
