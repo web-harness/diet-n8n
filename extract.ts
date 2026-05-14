@@ -3,6 +3,7 @@
 import path from "node:path";
 import fs from "node:fs";
 import crypto from "node:crypto";
+import { execFileSync } from "node:child_process";
 import { Readable, Transform } from "node:stream";
 import type { ReadableStream as NodeWebReadableStream } from "node:stream/web";
 import createDebug from "debug";
@@ -146,6 +147,47 @@ extract.on("finish", () => {
   dbg(
     `extraction complete — ${mb} MB tar stream in ${(extractMs / 1000).toFixed(2)}s (total ${(totalMs / 1000).toFixed(2)}s)`,
   );
+
+  const tr = path.join(DEST_DIR, "node_modules", "@n8n", "task-runner-python");
+  const venv = path.join(tr, ".venv");
+  if (!fs.existsSync(venv) || fs.existsSync(path.join(venv, "bin"))) return;
+
+  let hostMm = "";
+  try {
+    hostMm = execFileSync(
+      "python3",
+      ["-c", "import sys; print(f'{sys.version_info.major}.{sys.version_info.minor}')"],
+      {
+        encoding: "utf-8",
+      },
+    ).trim();
+  } catch {
+    /* keep hostMm empty */
+  }
+  let bundledMm = "";
+  try {
+    const cfg = fs.readFileSync(path.join(venv, "pyvenv.cfg"), "utf-8");
+    const m = cfg.match(/^\s*version_info\s*=\s*(\d+)\.(\d+)/m) ?? cfg.match(/^\s*version\s*=\s*(\d+)\.(\d+)/m);
+    if (m) bundledMm = `${m[1]}.${m[2]}`;
+  } catch {
+    /* keep bundledMm empty */
+  }
+
+  if (!/^\d+\.\d+$/.test(hostMm) || !bundledMm || hostMm !== bundledMm) {
+    const alt = path.join(tr, ".venv.nobin");
+    if (fs.existsSync(alt)) fs.rmSync(alt, { recursive: true, force: true });
+    fs.renameSync(venv, alt);
+    console.error(
+      `diet-n8n: host/bundled Python mismatch or unreadable (host=${hostMm || "?"} cfg=${bundledMm || "?"}); renamed .venv -> .venv.nobin`,
+    );
+    return;
+  }
+
+  try {
+    execFileSync("python3", ["-m", "venv", venv, "--upgrade"], { stdio: "inherit", cwd: tr });
+  } catch (e) {
+    die(`failed to recreate .venv: ${e instanceof Error ? e.message : String(e)}`);
+  }
 });
 
 extract.on("error", (err) => {

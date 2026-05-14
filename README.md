@@ -47,7 +47,7 @@ That makes it extremely hard to host n8n in tight Linux environments; for exampl
 
 Diet n8n applies a "diet" to the upstream package and strips out anything that is not immediately loaded by n8n core and all non-Linux x64 binaries. Diet n8n then compresses the resulting package into 10MB tar.xz archives so it can be downloaded in chunks more easily.
 
-The result is a reduction from somewhere north of 2GB to about 30MB (compressed).
+The result is a reduction from somewhere north of 2GB to about 50MB (compressed).
 
 Diet n8n extracts the chunks in a post-install script, which unpacks to about 600MB on disk.
 
