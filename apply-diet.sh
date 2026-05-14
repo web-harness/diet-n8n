@@ -92,13 +92,21 @@ echo "=== 3/15 Linux arm64 native prebuilds (.node + dirs) ==="
 find "$NODE_MODULES" -type f -name '*.node' \( -iname '*arm64*' -o -path '*linux-arm64*' \) -delete 2>/dev/null || true
 find "$NODE_MODULES" -type d \( -name 'linux-arm64' -o -name '*-linux-arm64-gnu' -o -name '*-linux-arm64-musl' \) -prune -exec rm -rf {} + 2>/dev/null || true
 
-echo "=== 4/15 Source maps ==="
-find "$NODE_MODULES" -name "*.js.map" -delete
+echo "=== 4/15 Source maps, CSS maps, Flow ==="
+find "$NODE_MODULES" \( -name "*.js.map" -o -name "*.css.map" \) -delete
+find "$NODE_MODULES" -type f -name "*.flow" -delete 2>/dev/null || true
 
 echo "=== 5/15 Test data (safe patterns only) ==="
-find "$NODE_MODULES" -type d \( -name "__tests__" -o -name "__test__" -o -name "testdata" -o -name "test-data" -o -name "fixtures" -o -name "fixture" -o -name "__mocks__" \) -exec rm -rf {} + 2>/dev/null || true
+find "$NODE_MODULES" -type d \( \
+  -name "__tests__" -o -name "__test__" -o -name "testdata" -o -name "test-data" \
+  -o -name "fixtures" -o -name "fixture" -o -name "__mocks__" \
+  -o -name "test" \
+  -o -name "examples" -o -name "example" -o -name "coverage" \
+  -o -name "benchmark" -o -name "benchmarks" -o -name "e2e" \
+  -o -name "__snapshots__" -o -name "demo" -o -name "demos" \
+  -o -name ".github" \
+  \) -exec rm -rf {} + 2>/dev/null || true
 find "$NODE_MODULES" -type f \( -name "*.test.*" -o -name "*.spec.*" -o -name "*.bench.*" \) -delete 2>/dev/null || true
-rm -rf "$NODE_MODULES/pdf-parse/test" 2>/dev/null || true
 
 echo "=== 6/15 TypeScript declarations ==="
 find "$NODE_MODULES" -type f -name "*.d.ts" -delete 2>/dev/null || true
