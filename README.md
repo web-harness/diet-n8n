@@ -17,7 +17,11 @@ npm install diet-n8n
 Sample bare minimum, **insecure**, and sandbox launch with [minimal.env](minimal.env):
 
 ```sh
-npx -y dotenv-cli -e minimal.env n8n
+# optional utilities for cleaner environment handling
+npm install -g dotenv-cli cross-env
+
+# launch n8n with almost everythng non essential stripped
+npx dotenv-cli -e minimal.env cross-env N8N_USER_FOLDER=$PWD n8n
 ```
 
 To automate the first time admin user creation:
