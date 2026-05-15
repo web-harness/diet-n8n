@@ -47,10 +47,11 @@ RUN set -e && set -o pipefail && \
 COPY apply-diet.sh minimal.env /app/
 RUN chmod +x apply-diet.sh && ./apply-diet.sh node_modules
 
-# Create compressed archive split into 10 MB chunks
+# Create compressed archive split into 10 MB chunks; record repackaged n8n semver next to chunks
 RUN set -e && set -o pipefail && \
     mkdir -p /out/chunks && \
-    tar -cf - node_modules | xz -9e | split -b 10M - /out/chunks/node_modules.tar.xz.
+    tar -cf - node_modules | xz -9e | split -b 10M - /out/chunks/node_modules.tar.xz. && \
+    node -p "require('./node_modules/n8n/package.json').version" > /out/.n8n-version
 
 FROM scratch AS export
 COPY --from=builder /out /

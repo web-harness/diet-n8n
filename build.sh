@@ -10,13 +10,7 @@ Usage: $(basename "$0") [OPTIONS]
 
 Build diet-n8n packaging and generate SHA256 checksums.
 
-Requires Docker. The script:
-  1. Builds the packaging using BuildKit (target: export stage)
-  2. Splits output into chunks in dist/chunks/
-  3. Generates SHA256 checksums for every chunk
-  4. Verifies all checksums
-  5. Bundles extract.ts with esbuild
-  6. Generates dist/package.json
+Requires Docker.
 
 Options:
   --help    Show this help message and exit
@@ -45,6 +39,17 @@ docker build \
     --output type=local,dest="$SCRIPT_DIR/dist" \
     "$SCRIPT_DIR"
 
+N8N_VERSION_FILE="$SCRIPT_DIR/dist/.n8n-version"
+if [[ ! -f "$N8N_VERSION_FILE" ]]; then
+    echo "Error: $N8N_VERSION_FILE is missing (Docker export did not emit repackaged n8n version)."
+    exit 1
+fi
+VERSION=$(tr -d '\r\n' <"$N8N_VERSION_FILE")
+if [[ -z "$VERSION" ]]; then
+    echo "Error: $N8N_VERSION_FILE is empty."
+    exit 1
+fi
+
 echo "==> Generating SHA256 checksums ..."
 (cd "$SCRIPT_DIR/dist/chunks" && sha256sum *) > "$SCRIPT_DIR/dist/sha256sums.txt"
 
@@ -52,6 +57,7 @@ chunk_count=$(ls -1 "$SCRIPT_DIR/dist/chunks/" | wc -l)
 total_size=$(du -sh "$SCRIPT_DIR/dist" | cut -f1)
 echo ""
 echo "==> Build summary:"
+echo "  n8n (repackaged): ${VERSION}"
 echo "  Chunks:     $chunk_count"
 echo "  Total size: $total_size"
 echo "  Chunk files:"
@@ -80,7 +86,6 @@ cp "$SCRIPT_DIR/minimal.env" "$SCRIPT_DIR/dist/minimal.env"
 echo "  minimal.env copied successfully."
 
 echo "==> Generating dist/package.json ..."
-VERSION=$(node -p "require('$SCRIPT_DIR/package.json').version")
 cat > "$SCRIPT_DIR/dist/package.json" << JSONEOF
 {
   "name": "diet-n8n",
@@ -95,4 +100,4 @@ cat > "$SCRIPT_DIR/dist/package.json" << JSONEOF
   "cpu": ["x64"]
 }
 JSONEOF
-echo "  dist/package.json generated (version: ${VERSION})."
+echo "  dist/package.json generated (version matches n8n: ${VERSION})."
