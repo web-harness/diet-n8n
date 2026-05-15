@@ -74,6 +74,11 @@ npx esbuild "$SCRIPT_DIR/extract.ts" --bundle --platform=node --format=cjs --out
 chmod +x "$SCRIPT_DIR/dist/extract.js"
 echo "  dist/extract.js bundled successfully."
 
+echo ""
+echo "==> Copying minimal.env to dist/ ..."
+cp "$SCRIPT_DIR/minimal.env" "$SCRIPT_DIR/dist/minimal.env"
+echo "  minimal.env copied successfully."
+
 echo "==> Generating dist/package.json ..."
 VERSION=$(node -p "require('$SCRIPT_DIR/package.json').version")
 cat > "$SCRIPT_DIR/dist/package.json" << JSONEOF

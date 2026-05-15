@@ -4,50 +4,46 @@ import path from "node:path";
 import fs from "node:fs";
 import crypto from "node:crypto";
 import { execFileSync } from "node:child_process";
-import { Readable, Transform } from "node:stream";
+import { Readable } from "node:stream";
 import type { ReadableStream as NodeWebReadableStream } from "node:stream/web";
 import createDebug from "debug";
 import { XzReadableStream } from "xz-decompress";
+import minimist from "minimist";
 import tar from "tar-fs";
 
-const dbg = createDebug("dietn8n:extract");
-const dbgProgress = createDebug("dietn8n:extract:progress");
+const dbg = createDebug("dietn8n");
+const argv = minimist(process.argv.slice(2));
 
-const DEST_DIR = process.argv[2] || __dirname;
-
-function die(msg: string) {
+function die(msg: string, exitCode: number = 1) {
   console.error(`diet-n8n: ${msg}`);
-  process.exit(1);
+  process.exit(exitCode);
 }
 
-function resolvePath(rel: string) {
-  const distPath = path.join(__dirname, "dist", rel);
-  if (fs.existsSync(distPath)) return distPath;
-  const directPath = path.join(__dirname, rel);
-  if (fs.existsSync(directPath)) return directPath;
-  return directPath; // Default to pkg context
+const DEST_DIR: string = path.resolve(argv.dest || argv.d || argv._[0] || __dirname);
+dbg(`destination chosen: ${DEST_DIR}`);
+
+if (!fs.existsSync(DEST_DIR)) {
+  die(`destination directory ${DEST_DIR} does not exist`);
 }
-const CHUNKS_DIR = resolvePath("chunks");
-const SUMS_FILE = resolvePath("sha256sums.txt");
+
+const CHUNKS_DIR = path.join(DEST_DIR, "chunks");
+const SUMS_FILE = path.join(DEST_DIR, "sha256sums.txt");
 const N8N_MARKER = path.join(DEST_DIR, "node_modules", "n8n", "package.json");
 
-const tStart = Date.now();
-
 if (fs.existsSync(N8N_MARKER)) {
-  dbg(`n8n already present at ${N8N_MARKER}, skipping extract.`);
-  process.exit(0);
+  die(`n8n already present at ${N8N_MARKER}`, 0);
 }
 
-dbg(`destination: ${DEST_DIR}`);
-dbg(`chunks dir:  ${CHUNKS_DIR}`);
-dbg(`checksums:   ${SUMS_FILE}`);
+dbg(`chunks dir: ${CHUNKS_DIR}`);
+dbg(`checksums: ${SUMS_FILE}`);
 
 const sums: Record<string, string> = {};
 try {
   const lines = fs.readFileSync(SUMS_FILE, "utf-8").trim().split("\n");
   for (const line of lines) {
-    const parts = line.trim().split(/\s+/);
+    const parts = line.trim().split(/\s+/).filter(Boolean);
     if (parts.length >= 2) sums[parts[1]] = parts[0];
+    else die(`invalid checksum line: ${line}`);
   }
   dbg(`loaded ${Object.keys(sums).length} expected checksums`);
 } catch (err) {
@@ -70,12 +66,10 @@ if (chunkFiles.length === 0) {
 
 dbg(`found ${chunkFiles.length} chunk file(s), verifying SHA-256...`);
 
-const tVerify = Date.now();
 const chunks: Buffer<ArrayBufferLike>[] = [];
 for (let i = 0; i < chunkFiles.length; i++) {
   const file = chunkFiles[i];
   const filePath = path.join(CHUNKS_DIR, file);
-  dbgProgress(`verify ${i + 1}/${chunkFiles.length}: ${file}`);
   let data = Buffer.alloc(0);
   try {
     data = fs.readFileSync(filePath);
@@ -90,15 +84,12 @@ for (let i = 0; i < chunkFiles.length; i++) {
 
   chunks.push(data);
 }
-const verifyMs = Date.now() - tVerify;
-const verifiedBytes = chunks.reduce((n, b) => n + b.length, 0);
-dbg(
-  `checksums OK — ${chunkFiles.length} chunk(s), ${(verifiedBytes / 1024 / 1024).toFixed(1)} MB in ${(verifyMs / 1000).toFixed(2)}s`,
-);
+
+dbg("checksums OK");
 
 const compressed = Buffer.concat(chunks);
 
-dbg(`decompressing xz and extracting tar (${(compressed.length / 1024 / 1024).toFixed(1)} MB compressed)...`);
+dbg("decompressing xz and extracting tar");
 
 const webStream = new ReadableStream({
   start(controller) {
@@ -110,27 +101,6 @@ const webStream = new ReadableStream({
 const decompressedStream = new XzReadableStream(webStream);
 const nodeStream = Readable.fromWeb(decompressedStream as NodeWebReadableStream);
 
-const tExtract = Date.now();
-let streamedBytes = 0;
-let lastProgressAt = 0;
-const progressEveryMs = 300;
-
-const byteTap = new Transform({
-  transform(chunk, _enc, cb) {
-    streamedBytes += chunk.length;
-    const now = Date.now();
-    if (now - lastProgressAt >= progressEveryMs) {
-      lastProgressAt = now;
-      const mb = (streamedBytes / 1024 / 1024).toFixed(1);
-      dbgProgress(`extract stream ${mb} MB (tar payload)`);
-    }
-    cb(null, chunk);
-  },
-  flush(cb) {
-    cb();
-  },
-});
-
 const extract = tar.extract(DEST_DIR, {
   ignore: (name) => {
     const relative = path.relative(DEST_DIR, name);
@@ -138,56 +108,24 @@ const extract = tar.extract(DEST_DIR, {
   },
 });
 
-nodeStream.pipe(byteTap).pipe(extract);
+nodeStream.pipe(extract);
 
 extract.on("finish", () => {
-  const extractMs = Date.now() - tExtract;
-  const totalMs = Date.now() - tStart;
-  const mb = (streamedBytes / 1024 / 1024).toFixed(1);
-  dbg(
-    `extraction complete — ${mb} MB tar stream in ${(extractMs / 1000).toFixed(2)}s (total ${(totalMs / 1000).toFixed(2)}s)`,
-  );
+  dbg("extraction complete, setting up Python task runner...");
 
   const tr = path.join(DEST_DIR, "node_modules", "@n8n", "task-runner-python");
-  const venv = path.join(tr, ".venv");
-  if (!fs.existsSync(venv) || fs.existsSync(path.join(venv, "bin"))) return;
-
-  let hostMm = "";
-  try {
-    hostMm = execFileSync(
-      "python3",
-      ["-c", "import sys; print(f'{sys.version_info.major}.{sys.version_info.minor}')"],
-      {
-        encoding: "utf-8",
-      },
-    ).trim();
-  } catch {
-    /* keep hostMm empty */
-  }
-  let bundledMm = "";
-  try {
-    const cfg = fs.readFileSync(path.join(venv, "pyvenv.cfg"), "utf-8");
-    const m = cfg.match(/^\s*version_info\s*=\s*(\d+)\.(\d+)/m) ?? cfg.match(/^\s*version\s*=\s*(\d+)\.(\d+)/m);
-    if (m) bundledMm = `${m[1]}.${m[2]}`;
-  } catch {
-    /* keep bundledMm empty */
-  }
-
-  if (!/^\d+\.\d+$/.test(hostMm) || !bundledMm || hostMm !== bundledMm) {
-    const alt = path.join(tr, ".venv.nobin");
-    if (fs.existsSync(alt)) fs.rmSync(alt, { recursive: true, force: true });
-    fs.renameSync(venv, alt);
-    console.error(
-      `diet-n8n: host/bundled Python mismatch or unreadable (host=${hostMm || "?"} cfg=${bundledMm || "?"}); renamed .venv -> .venv.nobin`,
-    );
-    return;
-  }
-
-  try {
-    execFileSync("python3", ["-m", "venv", venv, "--upgrade"], { stdio: "inherit", cwd: tr });
-  } catch (e) {
-    die(`failed to recreate .venv: ${e instanceof Error ? e.message : String(e)}`);
-  }
+  const chosen = execFileSync(
+    "sh",
+    ["-c", 'if python3.13 -c "import sys"; then echo python3.13; else python3.12 -c "import sys"; echo python3.12; fi'],
+    { encoding: "utf-8" },
+  ).trim();
+  dbg(`using Python ${chosen}`);
+  const suffix = chosen === "python3.13" ? "3.13" : "3.12";
+  fs.renameSync(path.join(tr, `.venv.${suffix}`), path.join(tr, ".venv"));
+  const otherSuffix = chosen === "python3.13" ? "3.12" : "3.13";
+  fs.rmSync(path.join(tr, `.venv.${otherSuffix}`), { recursive: true });
+  execFileSync(chosen, ["-m", "venv", ".venv", "--upgrade"], { stdio: "inherit", cwd: tr });
+  dbg("Python task runner setup complete");
 });
 
 extract.on("error", (err) => {
@@ -196,8 +134,4 @@ extract.on("error", (err) => {
 
 nodeStream.on("error", (err) => {
   die(`upstream stream failed: ${err.message}`);
-});
-
-byteTap.on("error", (err) => {
-  die(`stream tap failed: ${err.message}`);
 });

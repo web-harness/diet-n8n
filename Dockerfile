@@ -32,10 +32,16 @@ RUN set -e && set -o pipefail && \
     mv "/tmp/${ROOT}/packages/@n8n/task-runner-python" "node_modules/@n8n/task-runner-python" && \
     rm -rf "/tmp/${ROOT}" && \
     cd "node_modules/@n8n/task-runner-python" && \
-    uv sync --no-dev && \
-    uv cache clean && \
-    # bin directory is meant to be recreated on the target machine with "python3 -m venv .venv --upgrade"
-    rm -rf .venv/bin
+    uv python install 3.12 3.13 && \
+    cp pyproject.toml /tmp/pyproject.toml.orig && \
+    sed -i 's/requires-python = ">=3.13"/requires-python = ">=3.12"/' pyproject.toml && \
+    uv sync --no-dev --python 3.12 && \
+    mv .venv .venv.3.12 && \
+    cp /tmp/pyproject.toml.orig pyproject.toml && \
+    uv sync --no-dev --python 3.13 && \
+    mv .venv .venv.3.13 && \
+    rm -rf .venv.3.12/bin .venv.3.13/bin && \
+    uv cache clean
 
 # Diet: strip runtime-unnecessary bloat (apply-diet.sh sources minimal.env from SCRIPT_DIR)
 COPY apply-diet.sh minimal.env /app/
