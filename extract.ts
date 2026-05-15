@@ -9,14 +9,44 @@ import type { ReadableStream as NodeWebReadableStream } from "node:stream/web";
 import createDebug from "debug";
 import { XzReadableStream } from "xz-decompress";
 import minimist from "minimist";
+import which from "which";
+import { globSync } from "glob";
 import tar from "tar-fs";
+import assert from "node:assert";
 
 const dbg = createDebug("dietn8n");
 const argv = minimist(process.argv.slice(2));
 
+dbg.enabled = true;
+
 function die(msg: string, exitCode: number = 1) {
   console.error(`diet-n8n: ${msg}`);
   process.exit(exitCode);
+}
+
+function findPython() {
+  const python3 = which.sync("python3", { nothrow: true });
+  if (python3) return python3;
+  const python = which.sync("python", { nothrow: true });
+  if (python) return python;
+  return null;
+}
+
+enum PythonVersion {
+  Python312 = "3.12",
+  Python313 = "3.13",
+  Unsupported = "unsupported",
+}
+
+function getPythonVersion(): PythonVersion {
+  const python = findPython();
+  assert(python, "python not found");
+  dbg(`using Python ${python}`);
+  const version = execFileSync(python, ["--version"], { encoding: "utf-8" }).trim();
+  dbg(`Python version: ${version}`);
+  if (version.match(/\s+3\.12/)) return PythonVersion.Python312;
+  if (version.match(/\s+3\.13/)) return PythonVersion.Python313;
+  return PythonVersion.Unsupported;
 }
 
 const DEST_DIR: string = path.resolve(argv.dest || argv.d || argv._[0] || __dirname);
@@ -89,7 +119,7 @@ dbg("checksums OK");
 
 const compressed = Buffer.concat(chunks);
 
-dbg("decompressing xz and extracting tar");
+dbg("decompressing xz and extracting tar, this may take a while...");
 
 const webStream = new ReadableStream({
   start(controller) {
@@ -114,16 +144,22 @@ extract.on("finish", () => {
   dbg("extraction complete, setting up Python task runner...");
 
   const tr = path.join(DEST_DIR, "node_modules", "@n8n", "task-runner-python");
-  const chosen = execFileSync(
-    "sh",
-    ["-c", 'if python3.13 -c "import sys"; then echo python3.13; else python3.12 -c "import sys"; echo python3.12; fi'],
-    { encoding: "utf-8" },
-  ).trim();
-  dbg(`using Python ${chosen}`);
-  const suffix = chosen === "python3.13" ? "3.13" : "3.12";
-  fs.renameSync(path.join(tr, `.venv.${suffix}`), path.join(tr, ".venv"));
-  const otherSuffix = chosen === "python3.13" ? "3.12" : "3.13";
-  fs.rmSync(path.join(tr, `.venv.${otherSuffix}`), { recursive: true });
+  const chosen = findPython();
+  if (!chosen) {
+    die("python not found, skipping Python task runner setup", 0);
+  }
+  assert(chosen, "python not found");
+  const version = getPythonVersion();
+  if (version === PythonVersion.Unsupported) {
+    die("unsupported Python version, skipping Python task runner setup", 0);
+  }
+
+  fs.renameSync(path.join(tr, `.venv.${version}`), path.join(tr, ".venv"));
+  const otherVenvs = globSync(path.join(tr, ".venv.*"));
+  for (const otherVenv of otherVenvs) {
+    dbg(`removing incompatible venv: ${otherVenv}`);
+    fs.rmSync(otherVenv, { recursive: true });
+  }
   execFileSync(chosen, ["-m", "venv", ".venv", "--upgrade"], { stdio: "inherit", cwd: tr });
   dbg("Python task runner setup complete");
 });
