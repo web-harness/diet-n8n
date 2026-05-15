@@ -101,7 +101,7 @@ find "$NODE_MODULES" -type d \( \
   -name "__tests__" -o -name "__test__" -o -name "testdata" -o -name "test-data" \
   -o -name "fixtures" -o -name "fixture" -o -name "__mocks__" \
   -o -name "test" \
-  -o -name "examples" -o -name "example" -o -name "coverage" \
+  -o -name "coverage" \
   -o -name "benchmark" -o -name "benchmarks" -o -name "e2e" \
   -o -name "__snapshots__" -o -name "demo" -o -name "demos" \
   -o -name ".github" \
