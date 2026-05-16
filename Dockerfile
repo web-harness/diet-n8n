@@ -1,5 +1,6 @@
 # Multi-stage skeleton
 FROM node:24-bookworm-slim AS builder
+ARG PLATFORM=linux-x64
 SHELL ["/bin/bash", "-c"]
 
 RUN set -e && set -o pipefail && \
@@ -45,7 +46,7 @@ RUN set -e && set -o pipefail && \
 
 # Diet: strip runtime-unnecessary bloat (apply-diet.sh sources minimal.env from SCRIPT_DIR)
 COPY apply-diet.sh minimal.env /app/
-RUN chmod +x apply-diet.sh && ./apply-diet.sh node_modules
+RUN chmod +x apply-diet.sh && ./apply-diet.sh node_modules "$PLATFORM"
 
 # Create compressed archive split into 10 MB chunks; record repackaged n8n semver next to chunks
 RUN set -e && set -o pipefail && \

@@ -13,33 +13,66 @@ Build diet-n8n packaging and generate SHA256 checksums.
 Requires Docker.
 
 Options:
-  --help    Show this help message and exit
+  --help, -h             Show this help message and exit
+  --platform, -p <ID>    Target platform ID (default: linux-x64)
+                        Supported: win-x64, linux-x64, linux-arm64, macos-x64, macos-arm64
 EOF
 }
 
-if [[ "${1:-}" == "--help" ]]; then
+
+PLATFORM="linux-x64"  # default
+
+while [[ $# -gt 0 ]]; do
+  case "$1" in
+    --platform|-p)
+      if [[ -z "${2:-}" ]]; then
+        echo "Error: --platform requires an argument" >&2
+        exit 1
+      fi
+      PLATFORM="$2"
+      shift 2
+      ;;
+    --help|-h)
+      show_usage
+      exit 0
+      ;;
+    *)
+      echo "Error: Unknown option: $1" >&2
+      show_usage
+      exit 1
+      ;;
+  esac
+done
+
+# Validate platform
+case "$PLATFORM" in
+  win-x64|linux-x64|linux-arm64|macos-x64|macos-arm64) ;;
+  *)
+    echo "Error: Invalid platform '$PLATFORM'. Supported: win-x64, linux-x64, linux-arm64, macos-x64, macos-arm64" >&2
     show_usage
-    exit 0
-fi
-
-if ! command -v docker &> /dev/null; then
-    echo "Error: Docker is not installed or not in PATH."
-    echo "Please install Docker before running this script."
     exit 1
+    ;;
+esac
+
+if [[ "$PLATFORM" == "linux-x64" ]]; then
+  OUT_DIR="dist"
+else
+  OUT_DIR="dist-${PLATFORM}"
 fi
 
-echo "==> Cleaning dist/ ..."
-rm -rf "$SCRIPT_DIR/dist"
-mkdir -p "$SCRIPT_DIR/dist/chunks"
+echo "==> Cleaning $OUT_DIR/ ..."
+rm -rf "$SCRIPT_DIR/$OUT_DIR"
+mkdir -p "$SCRIPT_DIR/$OUT_DIR/chunks"
 
 echo "==> Building with Docker (platform: linux/amd64, target: export) ..."
 docker build \
     --platform linux/amd64 \
     --target export \
-    --output type=local,dest="$SCRIPT_DIR/dist" \
+    --build-arg "PLATFORM=${PLATFORM}" \
+    --output type=local,dest="$SCRIPT_DIR/$OUT_DIR" \
     "$SCRIPT_DIR"
 
-N8N_VERSION_FILE="$SCRIPT_DIR/dist/.n8n-version"
+N8N_VERSION_FILE="$SCRIPT_DIR/$OUT_DIR/.n8n-version"
 if [[ ! -f "$N8N_VERSION_FILE" ]]; then
     echo "Error: $N8N_VERSION_FILE is missing (Docker export did not emit repackaged n8n version)."
     exit 1
@@ -51,21 +84,21 @@ if [[ -z "$VERSION" ]]; then
 fi
 
 echo "==> Generating SHA256 checksums ..."
-(cd "$SCRIPT_DIR/dist/chunks" && sha256sum *) > "$SCRIPT_DIR/dist/sha256sums.txt"
+(cd "$SCRIPT_DIR/$OUT_DIR/chunks" && sha256sum *) > "$SCRIPT_DIR/$OUT_DIR/sha256sums.txt"
 
-chunk_count=$(ls -1 "$SCRIPT_DIR/dist/chunks/" | wc -l)
-total_size=$(du -sh "$SCRIPT_DIR/dist" | cut -f1)
+chunk_count=$(ls -1 "$SCRIPT_DIR/$OUT_DIR/chunks/" | wc -l)
+total_size=$(du -sh "$SCRIPT_DIR/$OUT_DIR" | cut -f1)
 echo ""
 echo "==> Build summary:"
 echo "  n8n (repackaged): ${VERSION}"
 echo "  Chunks:     $chunk_count"
 echo "  Total size: $total_size"
 echo "  Chunk files:"
-ls -lh "$SCRIPT_DIR/dist/chunks/" | sed 's/^/    /'
+ls -lh "$SCRIPT_DIR/$OUT_DIR/chunks/" | sed 's/^/    /'
 
 echo ""
 echo "==> Verifying SHA256 checksums ..."
-if (cd "$SCRIPT_DIR/dist/chunks" && sha256sum -c "$SCRIPT_DIR/dist/sha256sums.txt"); then
+if (cd "$SCRIPT_DIR/$OUT_DIR/chunks" && sha256sum -c "$SCRIPT_DIR/$OUT_DIR/sha256sums.txt"); then
     echo ""
     echo "==> All checksums verified successfully."
 else
@@ -76,17 +109,27 @@ fi
 
 echo ""
 echo "==> Bundling extract.ts with esbuild ..."
-npx esbuild "$SCRIPT_DIR/extract.ts" --bundle --platform=node --format=cjs --outfile="$SCRIPT_DIR/dist/extract.js" --minify
-chmod +x "$SCRIPT_DIR/dist/extract.js"
-echo "  dist/extract.js bundled successfully."
+npx esbuild "$SCRIPT_DIR/extract.ts" --bundle --platform=node --format=cjs --outfile="$SCRIPT_DIR/$OUT_DIR/extract.js" --minify
+chmod +x "$SCRIPT_DIR/$OUT_DIR/extract.js"
+echo "  $OUT_DIR/extract.js bundled successfully."
 
 echo ""
-echo "==> Copying minimal.env to dist/ ..."
-cp "$SCRIPT_DIR/minimal.env" "$SCRIPT_DIR/dist/minimal.env"
+echo "==> Copying minimal.env to $OUT_DIR/ ..."
+cp "$SCRIPT_DIR/minimal.env" "$SCRIPT_DIR/$OUT_DIR/minimal.env"
 echo "  minimal.env copied successfully."
 
-echo "==> Generating dist/package.json ..."
-cat > "$SCRIPT_DIR/dist/package.json" << JSONEOF
+# Map platform to package.json os/cpu fields
+case "$PLATFORM" in
+  win-x64)      PKG_OS="win32";  PKG_CPU="x64"   ;;
+  linux-x64)    PKG_OS="linux";  PKG_CPU="x64"   ;;
+  linux-arm64)  PKG_OS="linux";  PKG_CPU="arm64" ;;
+  macos-x64)    PKG_OS="darwin"; PKG_CPU="x64"   ;;
+  macos-arm64)  PKG_OS="darwin"; PKG_CPU="arm64" ;;
+esac
+
+echo ""
+echo "==> Generating $OUT_DIR/package.json ..."
+cat > "$SCRIPT_DIR/$OUT_DIR/package.json" << JSONEOF
 {
   "name": "diet-n8n",
   "version": "${VERSION}",
@@ -96,8 +139,9 @@ cat > "$SCRIPT_DIR/dist/package.json" << JSONEOF
   "scripts": {
     "postinstall": "node extract.js"
   },
-  "os": ["linux"],
-  "cpu": ["x64"]
+  "os": ["${PKG_OS}"],
+  "cpu": ["${PKG_CPU}"]
 }
 JSONEOF
-echo "  dist/package.json generated (version matches n8n: ${VERSION})."
+echo "  $OUT_DIR/package.json generated (version matches n8n: ${VERSION})."
+

@@ -1,12 +1,23 @@
 #!/usr/bin/env bash
-# Diet-prune a node_modules directory for runtime-only Linux x64 deployment.
-# Usage: ./apply-diet.sh [path-to-node_modules]
-#   Defaults to ./node_modules if not specified.
+# Diet-prune a node_modules directory for a specific platform.
+# Usage: ./apply-diet.sh [path-to-node_modules] [platform]
+#   Platforms: win-x64, linux-x64, linux-arm64, macos-x64, macos-arm64
+#   Defaults to ./node_modules and linux-x64.
 set -euo pipefail
 
 NM_INPUT="${1:-node_modules}"
 SELF_DIR="$(cd "$(dirname "$NM_INPUT")" && pwd)"
 NODE_MODULES="$(basename "$NM_INPUT")"
+PLATFORM="${2:-linux-x64}"
+# Platform mapping
+case "$PLATFORM" in
+  win-x64)      EXPECTED_OS="win32";  EXPECTED_ARCH="x64";    EXPECTED_FORMAT="PE32+"  ;;
+  linux-x64)    EXPECTED_OS="linux";  EXPECTED_ARCH="x64";    EXPECTED_FORMAT="ELF"    ;;
+  linux-arm64)  EXPECTED_OS="linux";  EXPECTED_ARCH="arm64";  EXPECTED_FORMAT="ELF"    ;;
+  macos-x64)    EXPECTED_OS="darwin"; EXPECTED_ARCH="x64";    EXPECTED_FORMAT="Mach-O" ;;
+  macos-arm64)  EXPECTED_OS="darwin"; EXPECTED_ARCH="arm64";  EXPECTED_FORMAT="Mach-O" ;;
+  *) echo "ERROR: Unknown platform '$PLATFORM'. Valid: win-x64, linux-x64, linux-arm64, macos-x64, macos-arm64" >&2; exit 1 ;;
+esac
 cd "$SELF_DIR"
 
 if [[ ! -d "$NODE_MODULES" ]]; then
@@ -88,9 +99,14 @@ while IFS= read -r -d '' top; do
   rm -rf "$top"
 done < <(find "$NODE_MODULES" -mindepth 1 -maxdepth 1 -type d -print0)
 
-echo "=== 3/15 Linux arm64 native prebuilds (.node + dirs) ==="
-find "$NODE_MODULES" -type f -name '*.node' \( -iname '*arm64*' -o -path '*linux-arm64*' \) -delete 2>/dev/null || true
-find "$NODE_MODULES" -type d \( -name 'linux-arm64' -o -name '*-linux-arm64-gnu' -o -name '*-linux-arm64-musl' \) -prune -exec rm -rf {} + 2>/dev/null || true
+echo "=== 3/15 Native prebuilds pruning (target: $PLATFORM) ==="
+if [[ "$EXPECTED_ARCH" == "x64" ]]; then
+  find "$NODE_MODULES" -type f -name '*.node' \( -iname '*arm64*' -o -path '*linux-arm64*' \) -delete 2>/dev/null || true
+  find "$NODE_MODULES" -type d \( -name 'linux-arm64' -o -name '*-linux-arm64-gnu' -o -name '*-linux-arm64-musl' \) -prune -exec rm -rf {} + 2>/dev/null || true
+else
+  find "$NODE_MODULES" -type f -name '*.node' \( -iname '*x64*' -o -path '*linux-x64*' \) -delete 2>/dev/null || true
+  find "$NODE_MODULES" -type d \( -name 'linux-x64' -o -name '*-linux-x64-gnu' -o -name '*-linux-x64-musl' \) -prune -exec rm -rf {} + 2>/dev/null || true
+fi
 
 echo "=== 4/15 Source maps, CSS maps, Flow ==="
 find "$NODE_MODULES" \( -name "*.js.map" -o -name "*.css.map" \) -delete
@@ -112,14 +128,41 @@ echo "=== 6/15 TypeScript declarations ==="
 find "$NODE_MODULES" -type f -name "*.d.ts" -delete 2>/dev/null || true
 find "$NODE_MODULES" -type f -name "*.d.ts.map" -delete 2>/dev/null || true
 
-echo "=== 7/15 Non-Linux native addons ==="
+echo "=== 7/15 Native addons pruning (target: $PLATFORM) ==="
+_keep_native_for_platform() {
+  local file="$1"
+  local file_output
+  file_output=$(file -b "$file")
+  # Check format
+  if ! echo "$file_output" | grep -q "$EXPECTED_FORMAT"; then
+    return 1
+  fi
+  # Check arch
+  if [[ "$EXPECTED_ARCH" == "x64" ]]; then
+    if ! echo "$file_output" | grep -qE "x86-64|x86_64"; then
+      return 1
+    fi
+  else
+    if ! echo "$file_output" | grep -qE "aarch64|arm64"; then
+      return 1
+    fi
+  fi
+  return 0
+}
+
 find "$NODE_MODULES" -type f -name "*.node" | while read -r file; do
-    if ! file -b "$file" | grep -q "^ELF"; then
-        echo "  REMOVED non-ELF: $file"
+    if ! _keep_native_for_platform "$file"; then
+        echo "  REMOVED non-matching native: $file"
         rm -f "$file"
     fi
 done
-find "$NODE_MODULES" -type f \( -name "*.dll" -o -name "*.dylib" \) -delete 2>/dev/null || true
+
+if [[ "$EXPECTED_OS" != "win32" ]]; then
+  find "$NODE_MODULES" -type f -name "*.dll" -delete 2>/dev/null || true
+fi
+if [[ "$EXPECTED_OS" != "darwin" ]]; then
+  find "$NODE_MODULES" -type f -name "*.dylib" -delete 2>/dev/null || true
+fi
 
 echo "=== 8/15 musl .node variants ==="
 find "$NODE_MODULES" -type f -name "*.node" \( -path "*-musl*" -o -path "*musl*" \) -delete 2>/dev/null || true
