@@ -51,8 +51,9 @@ jobs:
           echo "Docker failed to start"
           exit 1
 
+      # Windows: use the runner's Linux-capable Docker (setup-docker-action forces Windows containers).
       - uses: docker/setup-docker-action@v5
-        if: runner.os == 'Windows' || (runner.os == 'macOS' && runner.arch != 'ARM64')
+        if: runner.os == 'macOS' && runner.arch != 'ARM64'
 
       # docker-container driver pulls a BuildKit image for the host OS (breaks on Windows).
       - uses: docker/setup-buildx-action@v3
