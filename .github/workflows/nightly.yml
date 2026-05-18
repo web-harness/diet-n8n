@@ -50,11 +50,14 @@ jobs:
               gpath=$(command -v gsha256sum) && sudo ln -sf "$gpath" /usr/local/bin/sha256sum
               ;;
             Windows)
-              choco install busybox xz -y --no-progress
+              choco install busybox -y --no-progress
+              # xz ships with Git for Windows (no Chocolatey xz package)
+              echo "/usr/bin" >> "$GITHUB_PATH"
               ;;
           esac
           curl -fsSL https://astral.sh/uv/install.sh | sh
           echo "$HOME/.local/bin" >> "$GITHUB_PATH"
+          command -v xz >/dev/null || command -v file >/dev/null || { echo "xz or file missing on PATH"; exit 1; }
 
       - name: Install Node dependencies
         shell: bash
