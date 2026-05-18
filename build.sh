@@ -9,7 +9,7 @@ Usage: $(basename "$0") [OPTIONS]
 
 Build diet-n8n packaging and generate SHA256 checksums.
 
-Requires Docker.
+Uses a native host build when the machine matches the target platform; otherwise Docker.
 
 Options:
   --help, -h             Show this help message and exit
@@ -59,20 +59,57 @@ else
   OUT_DIR="dist-${PLATFORM}"
 fi
 
+host_platform_id() {
+  local os arch
+  os="$(uname -s)"
+  arch="$(uname -m)"
+  case "$os" in
+    Linux)
+      case "$arch" in
+        x86_64|amd64) echo "linux-x64" ;;
+        aarch64|arm64) echo "linux-arm64" ;;
+      esac
+      ;;
+    Darwin)
+      case "$arch" in
+        x86_64) echo "macos-x64" ;;
+        arm64|aarch64) echo "macos-arm64" ;;
+      esac
+      ;;
+    MINGW*|MSYS*|CYGWIN*|*MINGW*|*NT*)
+      case "$arch" in
+        x86_64|amd64) echo "win-x64" ;;
+      esac
+      ;;
+  esac
+}
+
+HOST_PLATFORM="$(host_platform_id || true)"
+
 echo "==> Cleaning $OUT_DIR/ ..."
 rm -rf "$SCRIPT_DIR/$OUT_DIR"
 mkdir -p "$SCRIPT_DIR/$OUT_DIR/chunks"
 
-echo "==> Building with Docker (target platform: $PLATFORM) ..."
-docker buildx build \
-    --target export \
-    --build-arg "PLATFORM=${PLATFORM}" \
-    --output type=local,dest="$SCRIPT_DIR/$OUT_DIR" \
-    "$SCRIPT_DIR"
+if [[ "$HOST_PLATFORM" == "$PLATFORM" ]]; then
+  echo "==> Native build (host $HOST_PLATFORM) ..."
+  export PLATFORM OUT_DIR SCRIPT_DIR
+  bash "$SCRIPT_DIR/build-native.sh"
+else
+  if [[ -z "$HOST_PLATFORM" ]]; then
+    echo "Error: cannot detect host platform (uname -s: $(uname -s), uname -m: $(uname -m))" >&2
+    exit 1
+  fi
+  echo "==> Docker build (host $HOST_PLATFORM → target $PLATFORM) ..."
+  docker buildx build \
+      --target export \
+      --build-arg "PLATFORM=${PLATFORM}" \
+      --output type=local,dest="$SCRIPT_DIR/$OUT_DIR" \
+      "$SCRIPT_DIR"
+fi
 
 N8N_VERSION_FILE="$SCRIPT_DIR/$OUT_DIR/.n8n-version"
 if [[ ! -f "$N8N_VERSION_FILE" ]]; then
-    echo "Error: $N8N_VERSION_FILE is missing (Docker export did not emit repackaged n8n version)."
+    echo "Error: $N8N_VERSION_FILE is missing (build did not emit repackaged n8n version)."
     exit 1
 fi
 VERSION=$(tr -d '\r\n' <"$N8N_VERSION_FILE")
