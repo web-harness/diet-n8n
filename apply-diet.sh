@@ -48,7 +48,7 @@ export N8N_USER_FOLDER="$N8N_TRACE_DIR"
 # Trace only: PostHogClient skips require('posthog-node') when diagnostics is off.
 export N8N_DIAGNOSTICS_ENABLED=true
 
-NODE_DEBUG=module npx n8n &>>"$LOGS_TXT" &
+NODE_DEBUG=module npx n8n >>"$LOGS_TXT" 2>&1 &
 n8n_pid=$!
 
 ready=0
