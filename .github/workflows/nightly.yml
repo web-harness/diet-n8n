@@ -74,8 +74,21 @@ jobs:
         shell: bash
         run: npm ci
 
+      - name: Cache key (UTC day, 1-day expiry)
+        id: cache-day
+        shell: bash
+        run: echo "day=$(date -u +%Y-%m-%d)" >> "$GITHUB_OUTPUT"
+
+      - name: Cache n8n install
+        uses: actions/cache@v4
+        with:
+          path: .ci-cache/n8n-install/${{ matrix.platform }}
+          key: n8n-install-${{ matrix.platform }}-${{ steps.cache-day.outputs.day }}
+
       - name: Build
         shell: bash
+        env:
+          DIET_N8N_INSTALL_CACHE: ${{ github.workspace }}/.ci-cache/n8n-install/${{ matrix.platform }}
         run: bash build.sh --platform ${{ matrix.platform }}
 
       - name: Mutate and Pack

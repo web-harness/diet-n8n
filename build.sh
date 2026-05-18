@@ -100,11 +100,44 @@ trap cleanup EXIT
 
 cd "$BUILD_ROOT"
 
+copy_node_modules_tree() {
+  local src="$1"
+  local dst="$2"
+  rm -rf "$dst"
+  mkdir -p "$(dirname "$dst")"
+  if command -v rsync >/dev/null 2>&1; then
+    rsync -a "$src/" "$dst/"
+  elif cp -a "$src" "$dst" 2>/dev/null; then
+    :
+  else
+    cp -r "$src" "$dst"
+  fi
+}
+
+n8n_install_cache_hit() {
+  [[ -n "${DIET_N8N_INSTALL_CACHE:-}" && -f "${DIET_N8N_INSTALL_CACHE}/node_modules/n8n/package.json" ]]
+}
+
 echo "==> Installing n8n (production) ..."
 npm config set min-release-age 3 --global 2>/dev/null || true
 pip config set install.uploaded-prior-to P3D --global 2>/dev/null || true
 npm init -y >/dev/null
-npm install n8n --omit=dev --no-audit --no-fund
+if n8n_install_cache_hit; then
+  echo "==> Restoring n8n from install cache (${DIET_N8N_INSTALL_CACHE}) ..."
+  copy_node_modules_tree "${DIET_N8N_INSTALL_CACHE}/node_modules" node_modules
+  if [[ -f "${DIET_N8N_INSTALL_CACHE}/package-lock.json" ]]; then
+    cp "${DIET_N8N_INSTALL_CACHE}/package-lock.json" .
+  fi
+else
+  npm install n8n --omit=dev --no-audit --no-fund
+  if [[ -n "${DIET_N8N_INSTALL_CACHE:-}" ]]; then
+    echo "==> Saving n8n install to cache (${DIET_N8N_INSTALL_CACHE}) ..."
+    mkdir -p "${DIET_N8N_INSTALL_CACHE}"
+    copy_node_modules_tree node_modules "${DIET_N8N_INSTALL_CACHE}/node_modules"
+    cp package.json "${DIET_N8N_INSTALL_CACHE}/"
+    cp package-lock.json "${DIET_N8N_INSTALL_CACHE}/" 2>/dev/null || true
+  fi
+fi
 
 echo "==> Python task runner ..."
 N8N_VER="$(node -p "require('./node_modules/n8n/package.json').version")"
