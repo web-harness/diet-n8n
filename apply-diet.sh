@@ -76,6 +76,15 @@ for _ in $(seq 1 30); do
 done
 kill -KILL "$n8n_pid" 2>/dev/null || true
 wait "$n8n_pid" 2>/dev/null || true
+# npx on Windows leaves child node.exe processes holding the trace SQLite DB
+if command -v taskkill >/dev/null 2>&1; then
+  taskkill //F //T //PID "$n8n_pid" 2>/dev/null || true
+fi
+for _ in $(seq 1 30); do
+  rm -f "$N8N_TRACE_DIR/.n8n/database.sqlite" "$N8N_TRACE_DIR/.n8n/database.sqlite-shm" "$N8N_TRACE_DIR/.n8n/database.sqlite-wal" 2>/dev/null
+  [[ ! -f "$N8N_TRACE_DIR/.n8n/database.sqlite" ]] && break
+  sleep 1
+done
 sleep 2
 
 [[ -s "$LOGS_TXT" ]]
@@ -201,7 +210,11 @@ if [[ -d "$TRP" ]]; then
 fi
 
 echo "=== 15/15 Trace cleanup ==="
-rm -f "$N8N_TRACE_DIR/.n8n/database.sqlite" "$N8N_TRACE_DIR/.n8n/database.sqlite-shm" "$N8N_TRACE_DIR/.n8n/database.sqlite-wal" 2>/dev/null || true
+for _ in $(seq 1 30); do
+  rm -f "$N8N_TRACE_DIR/.n8n/database.sqlite" "$N8N_TRACE_DIR/.n8n/database.sqlite-shm" "$N8N_TRACE_DIR/.n8n/database.sqlite-wal" 2>/dev/null
+  [[ ! -f "$N8N_TRACE_DIR/.n8n/database.sqlite" ]] && break
+  sleep 1
+done
 rm -rf "$N8N_TRACE_DIR" 2>/dev/null || true
 rm -f "$LOGS_TXT"
 

@@ -92,7 +92,10 @@ rm -rf "$SCRIPT_DIR/$OUT_DIR"
 mkdir -p "$SCRIPT_DIR/$OUT_DIR/chunks"
 
 BUILD_ROOT="$(mktemp -d)"
-cleanup() { rm -rf "$BUILD_ROOT"; }
+cleanup() {
+  sleep 2
+  rm -rf "$BUILD_ROOT" 2>/dev/null || true
+}
 trap cleanup EXIT
 
 cd "$BUILD_ROOT"
