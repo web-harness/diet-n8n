@@ -63,8 +63,18 @@ echo "==> Cleaning $OUT_DIR/ ..."
 rm -rf "$SCRIPT_DIR/$OUT_DIR"
 mkdir -p "$SCRIPT_DIR/$OUT_DIR/chunks"
 
-echo "==> Building with Docker (target: export) ..."
-docker build \
+case "$(uname -m)" in
+  x86_64|amd64)  DOCKER_PLATFORM="linux/amd64" ;;
+  aarch64|arm64) DOCKER_PLATFORM="linux/arm64" ;;
+  *)
+    echo "Error: unsupported builder machine arch: $(uname -m)" >&2
+    exit 1
+    ;;
+esac
+
+echo "==> Building with Docker (artifact: $PLATFORM, builder: $DOCKER_PLATFORM) ..."
+docker buildx build \
+    --platform "$DOCKER_PLATFORM" \
     --target export \
     --build-arg "PLATFORM=${PLATFORM}" \
     --output type=local,dest="$SCRIPT_DIR/$OUT_DIR" \
@@ -132,7 +142,8 @@ cat > "$SCRIPT_DIR/$OUT_DIR/package.json" << JSONEOF
   "name": "diet-n8n",
   "version": "${VERSION}",
   "bin": {
-    "diet-n8n": "./node_modules/n8n/bin/n8n"
+    "diet-n8n": "./node_modules/n8n/bin/n8n",
+    "n8n": "./node_modules/n8n/bin/n8n"
   },
   "scripts": {
     "postinstall": "node extract.js"
