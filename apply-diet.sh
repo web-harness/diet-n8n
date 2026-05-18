@@ -70,7 +70,13 @@ for _ in $(seq 1 10); do
 done
 sleep "$POST_READY_SECS"
 kill -TERM "$n8n_pid" 2>/dev/null || true
+for _ in $(seq 1 30); do
+  kill -0 "$n8n_pid" 2>/dev/null || break
+  sleep 1
+done
+kill -KILL "$n8n_pid" 2>/dev/null || true
 wait "$n8n_pid" 2>/dev/null || true
+sleep 2
 
 [[ -s "$LOGS_TXT" ]]
 
@@ -195,6 +201,7 @@ if [[ -d "$TRP" ]]; then
 fi
 
 echo "=== 15/15 Trace cleanup ==="
+rm -f "$N8N_TRACE_DIR/.n8n/database.sqlite" "$N8N_TRACE_DIR/.n8n/database.sqlite-shm" "$N8N_TRACE_DIR/.n8n/database.sqlite-wal" 2>/dev/null || true
 rm -rf "$N8N_TRACE_DIR" 2>/dev/null || true
 rm -f "$LOGS_TXT"
 

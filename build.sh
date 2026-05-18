@@ -98,7 +98,7 @@ trap cleanup EXIT
 cd "$BUILD_ROOT"
 
 echo "==> Installing n8n (production) ..."
-npm config set min-release-age 3 --global
+npm config set min-release-age 3 --global 2>/dev/null || true
 pip config set install.uploaded-prior-to P3D --global 2>/dev/null || true
 npm init -y >/dev/null
 npm install n8n --omit=dev --no-audit --no-fund

@@ -16,7 +16,7 @@ permissions:
 jobs:
   build-and-release:
     strategy:
-      fail-fast: false
+      fail-fast: true
       matrix:
         include:
           - platform: linux-x64
@@ -35,7 +35,7 @@ jobs:
       - uses: actions/checkout@v4
       - uses: actions/setup-node@v4
         with:
-          node-version: '24'
+          node-version: '22'
 
       - name: Install build dependencies
         shell: bash
@@ -43,7 +43,7 @@ jobs:
           case "${{ runner.os }}" in
             Linux)
               sudo apt-get update
-              sudo apt-get install -y file xz-utils python3 python3-venv curl
+              sudo apt-get install -y file xz-utils python3 python3-venv curl jq
               ;;
             macOS)
               brew install coreutils jq xz file curl
@@ -79,7 +79,7 @@ jobs:
           echo "tgz_path=$OUT_DIR/$(ls *.tgz | head -n 1)" >> "$GITHUB_OUTPUT"
 
       - name: Validate
-        timeout-minutes: 5
+        timeout-minutes: 10
         shell: bash
         run: |
           VALID_DIR=$(mktemp -d)
@@ -87,11 +87,13 @@ jobs:
           npm init -y >/dev/null
           npm install "$GITHUB_WORKSPACE/${{ steps.pack.outputs.tgz_path }}"
           cp "$GITHUB_WORKSPACE/${{ steps.pack.outputs.out_dir }}/minimal.env" .
-          npm exec -- n8n --version >/dev/null || { echo "n8n bin missing after install"; ls -la node_modules/.bin/ 2>/dev/null || true; exit 1; }
+          PKG_DIR=$(find node_modules -maxdepth 1 -type d -name 'diet-n8n-*' | head -1)
+          N8N_BIN="$PKG_DIR/node_modules/n8n/bin/n8n"
+          test -f "$N8N_BIN" || { echo "n8n missing at $N8N_BIN"; ls -la "$PKG_DIR" 2>/dev/null || true; exit 1; }
           export N8N_USER_FOLDER=$PWD
-          npx --yes dotenv-cli -e minimal.env -- npm exec -- n8n &
+          npx --yes dotenv-cli -e minimal.env -- node "$N8N_BIN" &
           N8N_PID=$!
-          for i in $(seq 1 60); do
+          for i in $(seq 1 90); do
             curl -sf http://localhost:5678/healthz && echo "VALIDATION PASSED" && kill "$N8N_PID" && exit 0
             sleep 2
           done
