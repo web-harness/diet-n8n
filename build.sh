@@ -7,9 +7,7 @@ show_usage() {
     cat <<EOF
 Usage: $(basename "$0") [OPTIONS]
 
-Build diet-n8n packaging and generate SHA256 checksums.
-
-Uses a native host build when the machine matches the target platform; otherwise Docker.
+Build diet-n8n packaging and generate SHA256 checksums on the host machine.
 
 Options:
   --help, -h             Show this help message and exit
@@ -18,6 +16,30 @@ Options:
 EOF
 }
 
+host_platform_id() {
+  local os arch
+  os="$(uname -s)"
+  arch="$(uname -m)"
+  case "$os" in
+    Linux)
+      case "$arch" in
+        x86_64|amd64) echo "linux-x64" ;;
+        aarch64|arm64) echo "linux-arm64" ;;
+      esac
+      ;;
+    Darwin)
+      case "$arch" in
+        x86_64) echo "macos-x64" ;;
+        arm64|aarch64) echo "macos-arm64" ;;
+      esac
+      ;;
+    MINGW*|MSYS*|CYGWIN*|*MINGW*|*NT*)
+      case "$arch" in
+        x86_64|amd64) echo "win-x64" ;;
+      esac
+      ;;
+  esac
+}
 
 PLATFORM="linux-x64"  # default
 
@@ -53,59 +75,68 @@ case "$PLATFORM" in
     ;;
 esac
 
+HOST_PLATFORM="$(host_platform_id || true)"
+if [[ "$HOST_PLATFORM" != "$PLATFORM" ]]; then
+  echo "Error: --platform $PLATFORM must be built on a matching host (detected: ${HOST_PLATFORM:-unknown})." >&2
+  exit 1
+fi
+
 if [[ "$PLATFORM" == "linux-x64" ]]; then
   OUT_DIR="dist"
 else
   OUT_DIR="dist-${PLATFORM}"
 fi
 
-host_platform_id() {
-  local os arch
-  os="$(uname -s)"
-  arch="$(uname -m)"
-  case "$os" in
-    Linux)
-      case "$arch" in
-        x86_64|amd64) echo "linux-x64" ;;
-        aarch64|arm64) echo "linux-arm64" ;;
-      esac
-      ;;
-    Darwin)
-      case "$arch" in
-        x86_64) echo "macos-x64" ;;
-        arm64|aarch64) echo "macos-arm64" ;;
-      esac
-      ;;
-    MINGW*|MSYS*|CYGWIN*|*MINGW*|*NT*)
-      case "$arch" in
-        x86_64|amd64) echo "win-x64" ;;
-      esac
-      ;;
-  esac
-}
-
-HOST_PLATFORM="$(host_platform_id || true)"
-
 echo "==> Cleaning $OUT_DIR/ ..."
 rm -rf "$SCRIPT_DIR/$OUT_DIR"
 mkdir -p "$SCRIPT_DIR/$OUT_DIR/chunks"
 
-if [[ "$HOST_PLATFORM" == "$PLATFORM" ]]; then
-  echo "==> Native build (host $HOST_PLATFORM) ..."
-  export PLATFORM OUT_DIR SCRIPT_DIR
-  bash "$SCRIPT_DIR/build-native.sh"
-else
-  if [[ -z "$HOST_PLATFORM" ]]; then
-    echo "Error: cannot detect host platform (uname -s: $(uname -s), uname -m: $(uname -m))" >&2
-    exit 1
-  fi
-  echo "==> Docker build (host $HOST_PLATFORM → target $PLATFORM) ..."
-  docker buildx build \
-      --target export \
-      --build-arg "PLATFORM=${PLATFORM}" \
-      --output type=local,dest="$SCRIPT_DIR/$OUT_DIR" \
-      "$SCRIPT_DIR"
-fi
+BUILD_ROOT="$(mktemp -d)"
+cleanup() { rm -rf "$BUILD_ROOT"; }
+trap cleanup EXIT
+
+cd "$BUILD_ROOT"
+
+echo "==> Installing n8n (production) ..."
+npm config set min-release-age 3 --global
+pip config set install.uploaded-prior-to P3D --global 2>/dev/null || true
+npm init -y >/dev/null
+npm install n8n --omit=dev --no-audit --no-fund
+
+echo "==> Python task runner ..."
+N8N_VER="$(node -p "require('./node_modules/n8n/package.json').version")"
+mkdir -p node_modules/@n8n
+MONOREPO_TGZ="$(mktemp)"
+curl -fsSL "https://github.com/n8n-io/n8n/archive/refs/tags/n8n%40${N8N_VER}.tar.gz" -o "$MONOREPO_TGZ"
+ROOT="$( ( tar tzf "$MONOREPO_TGZ" 2>/dev/null || true ) | head -1 | cut -d/ -f1 )"
+test -n "$ROOT"
+tar xzf "$MONOREPO_TGZ" -C /tmp "${ROOT}/packages/@n8n/task-runner-python"
+rm -f "$MONOREPO_TGZ"
+rm -rf node_modules/@n8n/task-runner-python
+mv "/tmp/${ROOT}/packages/@n8n/task-runner-python" "node_modules/@n8n/task-runner-python"
+rm -rf "/tmp/${ROOT}"
+
+cd "node_modules/@n8n/task-runner-python"
+uv python install 3.12 3.13
+cp pyproject.toml /tmp/pyproject.toml.orig
+sed 's/requires-python = ">=3.13"/requires-python = ">=3.12"/' pyproject.toml > pyproject.toml.tmp && mv pyproject.toml.tmp pyproject.toml
+uv sync --no-dev --python 3.12
+mv .venv .venv.3.12
+cp /tmp/pyproject.toml.orig pyproject.toml
+uv sync --no-dev --python 3.13
+mv .venv .venv.3.13
+rm -rf .venv.3.12/bin .venv.3.13/bin
+uv cache clean
+cd "$BUILD_ROOT"
+
+echo "==> Diet (apply-diet.sh) ..."
+cp "$SCRIPT_DIR/apply-diet.sh" "$SCRIPT_DIR/minimal.env" .
+chmod +x apply-diet.sh
+./apply-diet.sh node_modules "$PLATFORM"
+
+echo "==> Chunking node_modules ..."
+tar -cf - node_modules | xz -9e | split -b 10M - "$SCRIPT_DIR/$OUT_DIR/chunks/node_modules.tar.xz."
+node -p "require('./node_modules/n8n/package.json').version" > "$SCRIPT_DIR/$OUT_DIR/.n8n-version"
 
 N8N_VERSION_FILE="$SCRIPT_DIR/$OUT_DIR/.n8n-version"
 if [[ ! -f "$N8N_VERSION_FILE" ]]; then
@@ -180,4 +211,3 @@ cat > "$SCRIPT_DIR/$OUT_DIR/package.json" << JSONEOF
 }
 JSONEOF
 echo "  $OUT_DIR/package.json generated (version matches n8n: ${VERSION})."
-

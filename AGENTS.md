@@ -12,11 +12,11 @@ The actual n8n source code is never modified.
 
 ## Build
 
-- **Requires Docker** (builds on `linux/amd64` only)
-- `npm run build` → runs `bash build.sh`
+- **Host-only**: `bash build.sh --platform <ID>` must run on a matching machine (linux-x64, linux-arm64, win-x64, macos-x64, macos-arm64).
+- `npm run build` → runs `bash build.sh` (default platform linux-x64)
 - Output lands in `dist/` (for linux-x64) or `dist-<platform>/` for other platforms.
 - The generated `package.json` has platform-specific `"os"` and `"cpu"` fields.
-- n8n version is extracted at Docker build time from `node_modules/n8n/package.json`
+- n8n version is taken from `node_modules/n8n/package.json` after the host build
 - The prebuilt tarball `diet-n8n-2.20.6.tgz` at repo root was published to npm
 
 ## Format & Lint
@@ -43,7 +43,7 @@ Key insight: step 1 does **not** remove `n8n-*` or `acorn-*` scoped packages (th
 
 ## Python task runner
 
-The Docker build fetches the upstream n8n monorepo tag matching the installed n8n version, extracts `packages/@n8n/task-runner-python`, and builds **two** virtual environments (Python 3.12 and 3.13).
+The host build fetches the upstream n8n monorepo tag matching the installed n8n version, extracts `packages/@n8n/task-runner-python`, and builds **two** virtual environments (Python 3.12 and 3.13).
 
 At extraction time (`extract.ts`), the postinstall script:
 1. Detects the system Python version
