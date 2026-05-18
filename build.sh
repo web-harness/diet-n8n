@@ -63,18 +63,8 @@ echo "==> Cleaning $OUT_DIR/ ..."
 rm -rf "$SCRIPT_DIR/$OUT_DIR"
 mkdir -p "$SCRIPT_DIR/$OUT_DIR/chunks"
 
-case "$(uname -m)" in
-  x86_64|amd64)  DOCKER_PLATFORM="linux/amd64" ;;
-  aarch64|arm64) DOCKER_PLATFORM="linux/arm64" ;;
-  *)
-    echo "Error: unsupported builder machine arch: $(uname -m)" >&2
-    exit 1
-    ;;
-esac
-
-echo "==> Building with Docker (artifact: $PLATFORM, builder: $DOCKER_PLATFORM) ..."
+echo "==> Building with Docker (target platform: $PLATFORM) ..."
 docker buildx build \
-    --platform "$DOCKER_PLATFORM" \
     --target export \
     --build-arg "PLATFORM=${PLATFORM}" \
     --output type=local,dest="$SCRIPT_DIR/$OUT_DIR" \
