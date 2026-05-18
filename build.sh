@@ -2,7 +2,6 @@
 set -euo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-export DOCKER_BUILDKIT=1
 
 show_usage() {
     cat <<EOF
@@ -64,9 +63,8 @@ echo "==> Cleaning $OUT_DIR/ ..."
 rm -rf "$SCRIPT_DIR/$OUT_DIR"
 mkdir -p "$SCRIPT_DIR/$OUT_DIR/chunks"
 
-echo "==> Building with Docker (platform: linux/amd64, target: export) ..."
+echo "==> Building with Docker (target: export) ..."
 docker build \
-    --platform linux/amd64 \
     --target export \
     --build-arg "PLATFORM=${PLATFORM}" \
     --output type=local,dest="$SCRIPT_DIR/$OUT_DIR" \

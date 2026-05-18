@@ -1,0 +1,141 @@
+name: Nightly Build
+
+on:
+  push:
+  workflow_dispatch:
+  schedule:
+    - cron: '0 0 * * 0'
+
+concurrency:
+  group: nightly
+  cancel-in-progress: true
+
+jobs:
+  build-and-release:
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - platform: linux-x64
+            runner: ubuntu-latest
+          - platform: linux-arm64
+            runner: ubuntu-24.04-arm
+          - platform: win-x64
+            runner: windows-latest
+          - platform: macos-x64
+            runner: macos-15-intel
+          - platform: macos-arm64
+            runner: macos-latest
+    runs-on: ${{ matrix.runner }}
+
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+
+      - uses: docker/setup-docker-action@v5
+        if: runner.os != 'Linux'
+
+      - name: Install system dependencies
+        if: runner.os != 'Linux'
+        shell: bash
+        run: |
+          case "${{ runner.os }}" in
+            macOS)
+              brew install coreutils jq
+              gpath=$(command -v gsha256sum) && sudo ln -sf "$gpath" /usr/local/bin/sha256sum
+              ;;
+            Windows)
+              choco install busybox -y --no-progress
+              ;;
+          esac
+
+      - name: Install Node dependencies
+        shell: bash
+        run: npm ci
+
+      - name: Build
+        shell: bash
+        run: bash build.sh --platform ${{ matrix.platform }}
+
+      - name: Mutate and Pack
+        id: pack
+        shell: bash
+        run: |
+          OUT_DIR=$([ "${{ matrix.platform }}" = "linux-x64" ] && echo "dist" || echo "dist-${{ matrix.platform }}")
+          cd "$OUT_DIR"
+          jq '.name = "diet-n8n-${{ matrix.platform }}"' package.json > tmp.json && mv tmp.json package.json
+          npm pack
+          echo "out_dir=$OUT_DIR" >> $GITHUB_OUTPUT
+          echo "tgz_path=$OUT_DIR/$(ls *.tgz | head -n 1)" >> $GITHUB_OUTPUT
+
+      - name: Validate
+        timeout-minutes: 3
+        shell: bash
+        run: |
+          mkdir validation && cd validation
+          npm install "../${{ steps.pack.outputs.tgz_path }}"
+          cp "../${{ steps.pack.outputs.out_dir }}/minimal.env" .
+          npx --yes dotenv-cli -e minimal.env cross-env N8N_USER_FOLDER=$PWD n8n &
+          N8N_PID=$!
+          sleep 5
+          curl -sf http://localhost:5678/healthz && echo "VALIDATION PASSED" && kill $N8N_PID; exit_code=$?
+          kill $N8N_PID 2>/dev/null || true
+          exit $exit_code
+
+      - name: Release
+        shell: bash
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          TGZ_PATH=${{ steps.pack.outputs.tgz_path }}
+          if ! gh release view nightly >/dev/null 2>&1; then
+            gh release create nightly --target ${{ github.sha }} --title "Nightly" --notes "Auto-generated nightly build"
+          fi
+          gh release upload nightly "$TGZ_PATH" --clobber
+
+  release-audit:
+    needs: [build-and-release]
+    if: always()
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Audit Release Assets
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        shell: bash
+        run: |
+          PLATFORMS=("linux-x64" "linux-arm64" "win-x64" "macos-x64" "macos-arm64")
+          echo "Fetching assets for nightly release..."
+          ASSETS=$(gh release view nightly --json assets --jq '.assets[] | .name' 2>/dev/null || echo "")
+          [ -z "$ASSETS" ] && echo "No assets found." && exit 1
+
+          VALID_ASSETS=()
+          for asset in $ASSETS; do
+            matched=false
+            for p in "${PLATFORMS[@]}"; do
+              [[ $asset == diet-n8n-$p-*.tgz ]] && matched=true && break
+            done
+            $matched && VALID_ASSETS+=("$asset") || { echo "Invalid asset: $asset"; exit 1; }
+          done
+
+          count=${#VALID_ASSETS[@]}
+          echo "Found $count valid assets."
+          result=${{ needs.build-and-release.result }}
+
+          if [ "$result" = "success" ]; then
+            [ "$count" -eq 5 ] || { echo "Expected 5, found $count."; exit 1; }
+          else
+            [ "$count" -gt 0 ] || { echo "All builds failed."; exit 1; }
+            [ "$count" -lt 5 ] || { echo "All 5 present despite failure."; exit 1; }
+          fi
+
+          for p in "${PLATFORMS[@]}"; do
+            found=false
+            for va in "${VALID_ASSETS[@]}"; do
+              [[ $va == diet-n8n-$p-* ]] && found=true && break
+            done
+            $found && echo "  $p: Present" || echo "  $p: MISSING"
+          done
+          echo "Release audit passed."
