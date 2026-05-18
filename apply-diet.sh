@@ -48,6 +48,22 @@ export N8N_USER_FOLDER="$N8N_TRACE_DIR"
 # Trace only: PostHogClient skips require('posthog-node') when diagnostics is off.
 export N8N_DIAGNOSTICS_ENABLED=true
 
+n8n_port_ready() {
+  N8N_PORT="$N8N_PORT" node -e "
+    const http = require('http');
+    const port = process.env.N8N_PORT;
+    const req = http.get('http://127.0.0.1:' + port + '/healthz', (r) => {
+      r.resume();
+      process.exit(r.statusCode < 500 ? 0 : 1);
+    });
+    req.on('error', () => process.exit(1));
+    req.setTimeout(2000, () => {
+      req.destroy();
+      process.exit(1);
+    });
+  "
+}
+
 NODE_DEBUG=module npx n8n >>"$LOGS_TXT" 2>&1 &
 n8n_pid=$!
 
@@ -56,7 +72,7 @@ for ((i = 0; i < SERVER_WAIT_SECS; i++)); do
   if ! kill -0 "$n8n_pid" 2>/dev/null; then
     break
   fi
-  if bash -c "exec 3<>/dev/tcp/127.0.0.1/${N8N_PORT}; exec 3<&-; exec 3>&-" 2>/dev/null; then
+  if n8n_port_ready; then
     ready=1
     break
   fi
@@ -75,17 +91,13 @@ for _ in $(seq 1 30); do
   sleep 1
 done
 kill -KILL "$n8n_pid" 2>/dev/null || true
-wait "$n8n_pid" 2>/dev/null || true
 # npx on Windows leaves child node.exe processes holding the trace SQLite DB
 if command -v taskkill >/dev/null 2>&1; then
   taskkill //F //T //PID "$n8n_pid" 2>/dev/null || true
+else
+  wait "$n8n_pid" 2>/dev/null || true
 fi
-for _ in $(seq 1 30); do
-  rm -f "$N8N_TRACE_DIR/.n8n/database.sqlite" "$N8N_TRACE_DIR/.n8n/database.sqlite-shm" "$N8N_TRACE_DIR/.n8n/database.sqlite-wal" 2>/dev/null
-  [[ ! -f "$N8N_TRACE_DIR/.n8n/database.sqlite" ]] && break
-  sleep 1
-done
-sleep 2
+sleep 5
 
 [[ -s "$LOGS_TXT" ]]
 
