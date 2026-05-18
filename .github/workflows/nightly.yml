@@ -46,13 +46,19 @@ jobs:
               sudo apt-get install -y file xz-utils python3 python3-venv curl jq
               ;;
             macOS)
-              brew install coreutils jq xz file curl python@3.12
+              brew install coreutils jq xz file curl
+              if ! brew install python@3.12; then
+                brew link --overwrite python@3.12
+              fi
               gpath=$(command -v gsha256sum) && sudo ln -sf "$gpath" /usr/local/bin/sha256sum
               # node-gyp must not use Homebrew python@3.14 (no distutils); pin 3.12 for native modules
               PY312="$(brew --prefix python@3.12)/bin/python3.12"
-              "$PY312" -m pip install --upgrade pip setuptools
-              echo "PYTHON=$PY312" >> "$GITHUB_ENV"
-              echo "npm_config_python=$PY312" >> "$GITHUB_ENV"
+              test -x "$PY312" || { echo "python3.12 missing at $PY312"; exit 1; }
+              GYP_VENV="${RUNNER_TEMP:-/tmp}/py312-gyp"
+              "$PY312" -m venv "$GYP_VENV"
+              "$GYP_VENV/bin/pip" install setuptools
+              echo "PYTHON=$GYP_VENV/bin/python" >> "$GITHUB_ENV"
+              echo "npm_config_python=$GYP_VENV/bin/python" >> "$GITHUB_ENV"
               ;;
             Windows)
               choco install busybox -y --no-progress
