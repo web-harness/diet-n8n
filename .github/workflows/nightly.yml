@@ -16,7 +16,7 @@ permissions:
 jobs:
   build-and-release:
     strategy:
-      fail-fast: true
+      fail-fast: false
       matrix:
         include:
           - platform: linux-x64
@@ -46,7 +46,7 @@ jobs:
               sudo apt-get install -y file xz-utils python3 python3-venv curl
               ;;
             macOS)
-              brew install coreutils jq xz file python@3.12 curl
+              brew install coreutils jq xz file curl
               gpath=$(command -v gsha256sum) && sudo ln -sf "$gpath" /usr/local/bin/sha256sum
               ;;
             Windows)
