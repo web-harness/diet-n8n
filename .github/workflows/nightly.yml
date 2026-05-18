@@ -37,11 +37,28 @@ jobs:
         with:
           node-version: '22'
 
-      - uses: docker/setup-docker-action@v5
-        if: runner.os != 'Linux'
+      # setup-docker-action does not support macOS ARM (no nested virt); use Docker Desktop.
+      - name: Setup Docker Desktop (macOS ARM)
+        if: runner.os == 'macOS' && runner.arch == 'ARM64'
+        shell: bash
+        run: |
+          brew install --cask docker
+          open -a Docker
+          for i in $(seq 1 60); do
+            docker info >/dev/null 2>&1 && echo "Docker ready" && exit 0
+            sleep 5
+          done
+          echo "Docker failed to start"
+          exit 1
 
+      - uses: docker/setup-docker-action@v5
+        if: runner.os == 'Windows' || (runner.os == 'macOS' && runner.arch != 'ARM64')
+
+      # docker-container driver pulls a BuildKit image for the host OS (breaks on Windows).
       - uses: docker/setup-buildx-action@v3
         if: runner.os != 'Linux'
+        with:
+          driver: docker
 
       - name: Install system dependencies
         if: runner.os != 'Linux'
