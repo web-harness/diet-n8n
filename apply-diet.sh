@@ -102,14 +102,22 @@ sleep 5
 [[ -s "$LOGS_TXT" ]]
 
 echo "=== 1/15 Build ${DIET_TXT} from node_modules/* paths in ${LOGS_TXT} ==="
-grep -ohE 'node_modules/(@[^/[:space:]]+/[^/[:space:]]+|[^/[:space:]@]+)' "$LOGS_TXT" \
-  | sed 's|^node_modules/||' \
-  | while read -r rest; do
-      [[ -n "$rest" ]] || continue
-      printf '%s\n' "${rest%%/*}"
-    done | sort -u >"$DIET_TXT.tmp"
-sort -u "$DIET_TXT.tmp" -o "$DIET_TXT"
-rm -f "$DIET_TXT.tmp"
+node - "$LOGS_TXT" "$DIET_TXT" <<'NODE'
+const fs = require("fs");
+const [logPath, outPath] = process.argv.slice(2);
+const log = fs.readFileSync(logPath, "utf8");
+const re = /node_modules\/(@[^/\s]+\/[^/\s]+|[^/\s@]+)/g;
+const names = new Set();
+let m;
+while ((m = re.exec(log)) !== null) {
+  const rest = m[1];
+  const slash = rest.indexOf("/");
+  const top = slash === -1 ? rest : rest.slice(0, slash);
+  if (top) names.add(top);
+}
+const lines = [...names].sort();
+fs.writeFileSync(outPath, lines.length ? `${lines.join("\n")}\n` : "");
+NODE
 [[ -s "$DIET_TXT" ]]
 
 echo "=== 2/15 Top-level prune (diet.txt + n8n-* / acorn-* keep, same as trace/diet.js) ==="
@@ -123,7 +131,7 @@ while IFS= read -r -d '' top; do
     continue
   fi
   echo "  REMOVED top-level package dir: $name"
-  rm -rf "$top"
+  rm -rf "$top" 2>/dev/null || true
 done < <(find "$NODE_MODULES" -mindepth 1 -maxdepth 1 -type d -print0)
 
 echo "=== 3/15 Native prebuilds pruning (target: $PLATFORM) ==="
