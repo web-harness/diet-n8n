@@ -45,7 +45,18 @@ The vanilla n8n package downloads about 2GB of npm dependencies, and it does not
 
 That makes it extremely hard to host n8n in tight Linux environments; for example, on a tiny Raspberry Pi with less than 1GB of SD card storage.
 
-Diet n8n applies a "diet" to the upstream package and strips out anything that is not immediately loaded by n8n core and all non-Linux x64 binaries. Diet n8n then compresses the resulting package into 10MB tar.xz archives so it can be downloaded in chunks more easily.
+Diet n8n applies a "diet" to the upstream package and strips out anything that is not immediately loaded by n8n core and native binaries for platforms you are not targeting. Diet n8n then compresses the result into 10MB tar.xz chunks for easier distribution.
+
+## Build
+
+Requires Node 24, Python 3.12 or 3.13, pip, venv, and [uv](https://github.com/astral-sh/uv).
+
+```sh
+npm install
+npm run build
+```
+
+Set `DIET_TARGET` to one of `linux-x64`, `linux-arm64`, `win-x64`, `mac-x64`, `mac-arm64` (default: host OS/arch). Output lands in `dist/`.
 
 The result is a reduction from somewhere north of 2GB to about 50MB (compressed).
 
