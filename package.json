@@ -5,7 +5,7 @@
   "scripts": {
     "format": "biome format --write",
     "lint": "biome lint --fix",
-    "build": "bash build.sh"
+    "build": "NODE_OPTIONS='--import tsx' zx build.zx.ts"
   },
   "devDependencies": {
     "@biomejs/biome": "^2.4.15",
@@ -20,9 +20,12 @@
     "esbuild": "^0.28.0",
     "glob": "^13.0.6",
     "minimist": "^1.2.8",
+    "tar": "^7.5.15",
     "tar-fs": "^3.1.2",
+    "tsx": "^4.22.3",
     "which": "^7.0.0",
-    "xz-decompress": "^0.2.3"
+    "xz-decompress": "^0.2.3",
+    "zx": "^8.8.5"
   },
   "repository": {
     "type": "git",
