@@ -148,7 +148,7 @@ jobs:
           npm init -y >/dev/null
           npm install "$PACKED"
           cd node_modules/diet-n8n
-          npm start &
+          npm start >"${ROOT}/n8n-start.log" 2>&1 &
           PID=$!
           cleanup() {
             kill "$PID" 2>/dev/null || true
@@ -170,10 +170,12 @@ jobs:
             echo "n8n did not become healthy within timeout"
             exit 1
           fi
-          FINAL="${ROOT}/diet-n8n-${VER}-${SLUG}.tgz"
+          cd "$ROOT"
+          FINAL="diet-n8n-${VER}-${SLUG}.tgz"
           mv "$PACKED" "$FINAL"
+          # Relative path: upload-artifact on Windows cannot resolve /d/a/... paths from GITHUB_ENV.
           echo "PACKED_PATH=$FINAL" >> "$GITHUB_ENV"
-          echo "PACKED_NAME=$(basename "$FINAL")" >> "$GITHUB_ENV"
+          echo "PACKED_NAME=$FINAL" >> "$GITHUB_ENV"
 
       - uses: actions/upload-artifact@v4
         with:
