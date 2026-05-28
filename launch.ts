@@ -17,14 +17,22 @@ assert(n8nRel, "n8n package.json missing bin entry");
 const n8nCli = path.join(n8nPkgDir, n8nRel);
 assert(fs.existsSync(n8nCli), "n8n CLI entry not found");
 
-const minimalEnv = fs.readFileSync(path.join(ROOT, "minimal.env"), "utf8");
-const minimalEnvLines = minimalEnv.split("\n");
-const minimalEnvLinesFiltered = minimalEnvLines.filter((line) => !line.startsWith("#") && line.trim() !== "");
+function parseMinimalEnv(content: string): Record<string, string> {
+  const out: Record<string, string> = {};
+  for (const raw of content.split(/\r?\n/)) {
+    const line = raw.trim();
+    if (!line || line.startsWith("#")) continue;
+    const eq = line.indexOf("=");
+    if (eq < 0) continue;
+    out[line.slice(0, eq)] = line.slice(eq + 1);
+  }
+  return out;
+}
 
 const env = {
   ...process.env,
   N8N_USER_FOLDER: ROOT,
-  ...Object.fromEntries(minimalEnvLinesFiltered.map((line) => line.split("="))),
+  ...parseMinimalEnv(fs.readFileSync(path.join(ROOT, "minimal.env"), "utf8")),
 };
 
 const proc = childProcess.spawn(process.execPath, [n8nCli], {
