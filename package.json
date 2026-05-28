@@ -5,7 +5,7 @@
   "scripts": {
     "format": "biome format --write",
     "lint": "biome lint --fix",
-    "build": "NODE_OPTIONS='--import tsx' zx build.zx.ts"
+    "build": "cross-env NODE_OPTIONS=--import tsx zx build.zx.ts"
   },
   "devDependencies": {
     "@biomejs/biome": "^2.4.15",

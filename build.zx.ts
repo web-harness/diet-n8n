@@ -77,6 +77,13 @@ function n8nPkg() {
   return require(path.join(BUILD_DIR, NM, "n8n", "package.json"));
 }
 
+function n8nCliFromBuild(): string {
+  const pkg = n8nPkg();
+  const rel = typeof pkg.bin === "string" ? pkg.bin : pkg.bin?.n8n;
+  if (!rel) throw new Error("n8n package.json missing bin entry");
+  return path.join(NM, "n8n", rel);
+}
+
 function resolveDietTarget(): DietTarget {
   const env = process.env.DIET_TARGET as DietTarget | undefined;
   if (env) return env;
@@ -135,7 +142,7 @@ async function ensureDependencies() {
   await inRoot(async () => {
     assert((await $`${PYTHON_BIN} --version`).stdout.match(/3\.12|3\.13/));
     assert((await $`node --version`).stdout.match(/v24/));
-    assert((await $`pip --version`).stdout.match(/pip/));
+    assert((await $`${PYTHON_BIN} -m pip --version`).stdout.match(/pip/));
     assert((await $`${PYTHON_BIN} -m venv --help`).exitCode === 0);
     assert((await $`uv --version`).stdout.match(/uv/));
     console.log(chalk.green("Dependencies are present"));
@@ -200,8 +207,9 @@ async function installPythonTaskRunner(n8nVersion: string) {
     await fs.promises.writeFile(pyproject, pyprojectOrig);
     await $`uv sync --no-dev --python 3.13`;
     await fs.promises.rename(path.join(taskRunnerDir, ".venv"), path.join(taskRunnerDir, ".venv.3.13"));
-    await fs.promises.rm(path.join(taskRunnerDir, ".venv.3.12", "bin"), { recursive: true, force: true });
-    await fs.promises.rm(path.join(taskRunnerDir, ".venv.3.13", "bin"), { recursive: true, force: true });
+    const venvLauncher = process.platform === "win32" ? "Scripts" : "bin";
+    await fs.promises.rm(path.join(taskRunnerDir, ".venv.3.12", venvLauncher), { recursive: true, force: true });
+    await fs.promises.rm(path.join(taskRunnerDir, ".venv.3.13", venvLauncher), { recursive: true, force: true });
     await $`uv cache clean`;
   });
   console.log(chalk.green("Python task runner installed"));
@@ -239,7 +247,7 @@ async function traceN8n(): Promise<Set<string>> {
     NODE_DEBUG: "module",
   };
 
-  const proc = $`node ${NM}/n8n/bin/n8n`.stdio("pipe", "pipe", "ignore").quiet();
+  const proc = $`node ${n8nCliFromBuild()}`.stdio("pipe", "pipe", "ignore").quiet();
   proc.stdout.pipe(logStream, { end: false });
   proc.stderr.pipe(logStream, { end: false });
   const host = `127.0.0.1:${port}`;

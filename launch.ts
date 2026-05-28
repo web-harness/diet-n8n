@@ -8,9 +8,14 @@ const ROOT = __dirname;
 assert(fs.existsSync(path.join(ROOT, "minimal.env")), "minimal.env not found");
 assert(fs.existsSync(path.join(ROOT, "node_modules")), "postinstall script not ran");
 
-const n8nBin = path.join(ROOT, "node_modules", "n8n", "bin", "n8n");
-
-assert(fs.existsSync(n8nBin), "n8n binary not found");
+const n8nPkgDir = path.join(ROOT, "node_modules", "n8n");
+const n8nPkg = JSON.parse(fs.readFileSync(path.join(n8nPkgDir, "package.json"), "utf8")) as {
+  bin?: string | Record<string, string>;
+};
+const n8nRel = typeof n8nPkg.bin === "string" ? n8nPkg.bin : n8nPkg.bin?.n8n;
+assert(n8nRel, "n8n package.json missing bin entry");
+const n8nCli = path.join(n8nPkgDir, n8nRel);
+assert(fs.existsSync(n8nCli), "n8n CLI entry not found");
 
 const minimalEnv = fs.readFileSync(path.join(ROOT, "minimal.env"), "utf8");
 const minimalEnvLines = minimalEnv.split("\n");
@@ -22,7 +27,7 @@ const env = {
   ...Object.fromEntries(minimalEnvLinesFiltered.map((line) => line.split("="))),
 };
 
-const proc = childProcess.spawn(process.execPath, [n8nBin], {
+const proc = childProcess.spawn(process.execPath, [n8nCli], {
   env,
   stdio: "inherit",
 });
