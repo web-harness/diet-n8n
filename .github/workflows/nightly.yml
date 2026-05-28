@@ -84,6 +84,8 @@ jobs:
 
       - name: npm ci
         shell: bash
+        env:
+          npm_config_build_from_source: "false"
         run: npm ci
 
       - name: npm run build

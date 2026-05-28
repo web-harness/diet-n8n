@@ -21,7 +21,7 @@
     "esbuild": "^0.28.0",
     "file-type": "^21.3.4",
     "glob": "^13.0.6",
-    "@napi-rs/lzma": "^1.4.5",
+    "lzma-native": "^8.0.6",
     "minimist": "^1.2.8",
     "tar": "^7.5.15",
     "tar-fs": "^3.1.2",
@@ -46,5 +46,10 @@
   "bugs": {
     "url": "https://github.com/web-harness/diet-n8n/issues"
   },
-  "homepage": "https://github.com/web-harness/diet-n8n#readme"
+  "homepage": "https://github.com/web-harness/diet-n8n#readme",
+  "overrides": {
+    "lzma-native": {
+      "node-addon-api": "^8.3.0"
+    }
+  }
 }

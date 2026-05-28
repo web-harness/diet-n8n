@@ -11,7 +11,7 @@ import { parse as parseEnv } from "dotenv";
 import esbuild from "esbuild";
 import { fileTypeFromFile } from "file-type";
 import { glob } from "glob";
-import { xz as xzEncode } from "@napi-rs/lzma";
+import lzma from "lzma-native";
 import waitOn from "wait-on";
 
 import { $, cd, chalk, within } from "zx";
@@ -335,20 +335,21 @@ async function packageDist(target: DietTarget) {
   const { version } = n8nPkg();
   const chunksDir = path.join(DIST_DIR, "chunks");
 
-  const tarParts: Buffer[] = [];
+  const parts: Buffer[] = [];
   await pipeline(
     tar.c({ cwd: BUILD_DIR }, [NM]),
+    lzma.createCompressor({ preset: 9 | (1 << 31) }),
     new Writable({
       write(chunk, _, cb) {
-        tarParts.push(Buffer.from(chunk));
+        parts.push(Buffer.from(chunk));
         cb();
       },
     }),
   );
-  const xzOut = xzEncode.compressSync(Buffer.concat(tarParts));
+  const xz = Buffer.concat(parts);
   const prefix = path.join(chunksDir, "node_modules.tar.xz.");
-  for (let i = 0, off = 0; off < xzOut.length; i++, off += CHUNK)
-    await fs.promises.writeFile(`${prefix}${splitSuffix(i)}`, xzOut.subarray(off, off + CHUNK));
+  for (let i = 0, off = 0; off < xz.length; i++, off += CHUNK)
+    await fs.promises.writeFile(`${prefix}${splitSuffix(i)}`, xz.subarray(off, off + CHUNK));
 
   const chunkNames = (await fs.promises.readdir(chunksDir)).filter((f) => f.startsWith("node_modules.tar.xz.")).sort();
   const sums = await Promise.all(
