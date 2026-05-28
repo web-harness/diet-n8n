@@ -52,25 +52,19 @@ jobs:
       - uses: actions/setup-node@v4
         with:
           node-version: ${{ env.NODE_VERSION }}
-          cache: npm
 
       - uses: actions/setup-python@v5
         with:
           python-version: ${{ env.PYTHON_VERSION }}
 
       - uses: astral-sh/setup-uv@v5
+        with:
+          enable-cache: false
 
       - name: Install build tools (ARM Linux)
         if: matrix.runner == 'ubuntu-24.04-arm'
         shell: bash
         run: sudo apt-get update && sudo apt-get install -y build-essential
-
-      - name: Cache uv
-        uses: actions/cache@v4
-        with:
-          path: ~/.cache/uv
-          key: uv-${{ matrix.slug }}-${{ hashFiles('package-lock.json') }}
-          restore-keys: uv-${{ matrix.slug }}-
 
       - name: Verify toolchain
         shell: bash
