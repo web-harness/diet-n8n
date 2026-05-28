@@ -211,7 +211,9 @@ async function updateMinimalEnv() {
   console.log(chalk.green("Updating minimal.env..."));
   const { ModuleRegistry } = require(path.join(BUILD_DIR, NM, "@n8n/backend-common/dist/modules/module-registry.js"));
   const { defaultModules } = new ModuleRegistry();
-  const skipped = defaultModules.filter((m: string) => m !== "community-packages" && m !== "workflow-builder").sort();
+  const skipped = defaultModules
+    .filter((m: string) => m !== "community-packages" && m !== "workflow-builder" && m !== "favorites")
+    .sort();
   const body = await fs.promises.readFile(MINIMAL_ENV, "utf8");
   await fs.promises.writeFile(
     MINIMAL_ENV,
@@ -309,6 +311,17 @@ async function applyDiet(target: DietTarget) {
   console.log(chalk.green("Diet applied"));
 }
 
+async function applyPatches() {
+  console.log(chalk.green("Applying patches..."));
+  await inBuild(async () => {
+    const hideEvaluationsSnippet = `<script type="module">/*Hide Evaluations:*/(function(){"use strict";const e=()=>{document.querySelectorAll('div[data-test-id="radio-button-evaluation"]').forEach(o=>{const t=o.closest("label");t&&t.style.setProperty("display","none","important")})};e(),new MutationObserver(e).observe(document.body,{childList:!0,subtree:!0})})();</script>`;
+    const editorHtml = path.join(BUILD_NM, "n8n-editor-ui/dist/index.html");
+    const editorHtmlOrig = await fs.promises.readFile(editorHtml, "utf8");
+    await fs.promises.writeFile(editorHtml, editorHtmlOrig.replace("</body>", `${hideEvaluationsSnippet}\n</body>`));
+  });
+  console.log(chalk.green("Patches applied"));
+}
+
 async function packageDist(target: DietTarget) {
   console.log(chalk.green("Packaging dist..."));
   const { version } = n8nPkg();
@@ -387,6 +400,7 @@ async function main() {
   await updateMinimalEnv();
   const target = resolveDietTarget();
   await applyDiet(target);
+  await applyPatches();
   await packageDist(target);
 }
 
