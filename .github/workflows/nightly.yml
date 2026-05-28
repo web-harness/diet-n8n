@@ -61,6 +61,10 @@ jobs:
         with:
           enable-cache: false
 
+      - name: Install Python distutils for node-gyp
+        shell: bash
+        run: "$DIET_N8N_PYTHON_BIN -m pip install setuptools"
+
       - name: Install build tools (ARM Linux)
         if: matrix.runner == 'ubuntu-24.04-arm'
         shell: bash
