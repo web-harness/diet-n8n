@@ -109,7 +109,8 @@ async function inRoot<T>(fn: () => Promise<T>) {
 
 async function rmGlobs(cwd: string, patterns: string[]) {
   for (const pattern of patterns) {
-    for (const p of await glob(pattern, { cwd, absolute: true, dot: true }))
+    // macOS/Windows default nocase:true — LICENSE-* would match license-state.js.
+    for (const p of await glob(pattern, { cwd, absolute: true, dot: true, nocase: false }))
       await fs.promises.rm(p, { recursive: true, force: true });
   }
 }
