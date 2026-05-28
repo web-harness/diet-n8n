@@ -136,10 +136,11 @@ jobs:
           SLUG: ${{ matrix.slug }}
         run: |
           set -euo pipefail
+          ROOT="$(pwd)"
           cd dist
           npm pack
           VER="$(node -p "require('./package.json').version")"
-          PACKED="../diet-n8n-${VER}.tgz"
+          PACKED="${ROOT}/diet-n8n-${VER}.tgz"
           mv "diet-n8n-${VER}.tgz" "$PACKED"
           cd ..
           mkdir smoke
@@ -169,11 +170,10 @@ jobs:
             echo "n8n did not become healthy within timeout"
             exit 1
           fi
-          cd ../../..
-          FINAL="diet-n8n-${VER}-${SLUG}.tgz"
+          FINAL="${ROOT}/diet-n8n-${VER}-${SLUG}.tgz"
           mv "$PACKED" "$FINAL"
           echo "PACKED_PATH=$FINAL" >> "$GITHUB_ENV"
-          echo "PACKED_NAME=$FINAL" >> "$GITHUB_ENV"
+          echo "PACKED_NAME=$(basename "$FINAL")" >> "$GITHUB_ENV"
 
       - uses: actions/upload-artifact@v4
         with:
