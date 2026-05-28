@@ -81,7 +81,8 @@ function n8nCliFromBuild(): string {
   const pkg = n8nPkg();
   const rel = typeof pkg.bin === "string" ? pkg.bin : pkg.bin?.n8n;
   if (!rel) throw new Error("n8n package.json missing bin entry");
-  return path.join(NM, "n8n", rel);
+  // zx template literals treat backslashes as escapes (e.g. node_modules\n8n → newline).
+  return path.join(BUILD_DIR, NM, "n8n", rel).replace(/\\/g, "/");
 }
 
 function resolveDietTarget(): DietTarget {
