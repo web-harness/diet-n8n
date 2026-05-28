@@ -348,6 +348,15 @@ async function packageDist(target: DietTarget) {
     outfile: path.join(DIST_DIR, "extract.js"),
     minify: true,
   });
+  await esbuild.build({
+    entryPoints: [path.join(ROOT, "launch.ts")],
+    bundle: true,
+    platform: "node",
+    format: "cjs",
+    outfile: path.join(DIST_DIR, "launch.js"),
+    minify: true,
+  });
+
   await fs.promises.chmod(path.join(DIST_DIR, "extract.js"), 0o755);
   await fs.promises.copyFile(MINIMAL_ENV, path.join(DIST_DIR, "minimal.env"));
 
@@ -358,8 +367,8 @@ async function packageDist(target: DietTarget) {
       {
         name: "diet-n8n",
         version,
-        bin: { "diet-n8n": `./${NM}/n8n/bin/n8n` },
-        scripts: { postinstall: "node extract.js" },
+        bin: { "diet-n8n": "./launch.js" },
+        scripts: { postinstall: "node extract.js", start: "node launch.js" },
         os,
         cpu,
       },
