@@ -10,18 +10,12 @@ n8n repackaged for tight environments.
 
 ## Usage
 
-```sh
-npm install diet-n8n
-```
-
-Sample bare minimum, **insecure**, and sandbox launch with [minimal.env](minimal.env):
+Download your platform's distribution from the [Releases](https://github.com/web-harness/diet-n8n/releases) page.
 
 ```sh
-# optional utilities for cleaner environment handling
-npm install -g dotenv-cli cross-env
-
-# launch n8n with almost everythng non essential stripped
-npx dotenv-cli -e minimal.env cross-env N8N_USER_FOLDER=$PWD n8n
+npm install diet-n8n-<version>-<platform>.tgz
+cd node_modules/diet-n8n
+npm start
 ```
 
 To automate the first time admin user creation:
@@ -58,7 +52,7 @@ npm run build
 
 Set `DIET_TARGET` to one of `linux-x64`, `linux-arm64`, `win-x64`, `mac-x64`, `mac-arm64` (default: host OS/arch). Output lands in `dist/`.
 
-The result is a reduction from somewhere north of 2GB to about 50MB (compressed).
+The result is a reduction from somewhere north of 2GB to about 35MB (compressed).
 
 Diet n8n extracts the chunks in a post-install script, which unpacks to about 600MB on disk.
 
