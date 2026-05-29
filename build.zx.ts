@@ -379,6 +379,15 @@ async function packageDist(target: DietTarget) {
     outfile: path.join(DIST_DIR, "launch.js"),
     minify: true,
   });
+  await esbuild.build({
+    entryPoints: [path.join(ROOT, "hooks.ts")],
+    bundle: true,
+    platform: "node",
+    format: "cjs",
+    outfile: path.join(DIST_DIR, "hooks.js"),
+    external: ["n8n", "router/lib/layer"],
+    minify: true,
+  });
 
   await fs.promises.chmod(path.join(DIST_DIR, "extract.js"), 0o755);
   await fs.promises.copyFile(MINIMAL_ENV, path.join(DIST_DIR, "minimal.env"));
