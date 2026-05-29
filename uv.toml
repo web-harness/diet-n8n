@@ -1,0 +1,2 @@
+# Keep cooldown aligned with pip.conf (uploaded-prior-to = P3D).
+exclude-newer = "3 days"

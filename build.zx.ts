@@ -17,6 +17,9 @@ import waitOn from "wait-on";
 import { $, cd, chalk, within } from "zx";
 
 const ROOT = __dirname;
+const NPMRC = path.join(ROOT, ".npmrc");
+const PIP_CONF = path.join(ROOT, "pip.conf");
+const UV_CONF = path.join(ROOT, "uv.toml");
 const BUILD_DIR = path.join(ROOT, "build");
 const DIST_DIR = path.join(ROOT, "dist");
 const MINIMAL_ENV = path.join(ROOT, "minimal.env");
@@ -129,6 +132,38 @@ function keepPlatformToken(tok: string, keep: string[]) {
   return keep.some((k) => tok === k || tok.startsWith(`${k}-`));
 }
 
+function applySupplyChainEnv() {
+  $.env = {
+    ...$.env,
+    NPM_CONFIG_USERCONFIG: NPMRC,
+    PIP_CONFIG_FILE: PIP_CONF,
+    UV_CONFIG_FILE: UV_CONF,
+  };
+}
+
+async function assertSupplyChainConfig() {
+  assert(fs.existsSync(NPMRC));
+  assert(fs.existsSync(PIP_CONF));
+  assert(fs.existsSync(UV_CONF));
+  assert($.env.NPM_CONFIG_USERCONFIG === NPMRC);
+  assert($.env.PIP_CONFIG_FILE === PIP_CONF);
+  assert($.env.UV_CONFIG_FILE === UV_CONF);
+
+  // npm flattens min-release-age into `before`; config get min-release-age returns null.
+  const before = new Date((await $`npm config get before`).stdout.trim());
+  const ageDays = (Date.now() - before.getTime()) / 86_400_000;
+  assert(
+    ageDays >= 2.5 && ageDays <= 3.5,
+    `expected min-release-age=3 (~3d before cutoff), got before=${before.toISOString()} (${ageDays.toFixed(2)}d)`,
+  );
+
+  const pipList = (await $`${PYTHON_BIN} -m pip config list`).stdout;
+  assert(
+    pipList.includes("install.uploaded-prior-to='P3D'") || pipList.includes("install.uploaded-prior-to=P3D"),
+    "expected uploaded-prior-to=P3D in active pip config",
+  );
+}
+
 async function prepare() {
   console.log(chalk.green("Preparing build environment..."));
   await inRoot(async () => {
@@ -136,6 +171,7 @@ async function prepare() {
     await fs.promises.rm(BUILD_DIR, { recursive: true, force: true });
     await fs.promises.mkdir(path.join(DIST_DIR, "chunks"), { recursive: true });
     await fs.promises.mkdir(BUILD_DIR, { recursive: true });
+    await fs.promises.copyFile(NPMRC, path.join(BUILD_DIR, ".npmrc"));
   });
 }
 
@@ -418,8 +454,10 @@ async function packageDist(target: DietTarget) {
 }
 
 async function main() {
+  applySupplyChainEnv();
   await prepare();
   await ensureDependencies();
+  await assertSupplyChainConfig();
   const version = await installUpstream();
   await installPythonTaskRunner(version);
   await updateMinimalEnv();

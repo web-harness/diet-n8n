@@ -46,6 +46,9 @@ jobs:
     env:
       DIET_TARGET: ${{ matrix.diet_target }}
       DIET_N8N_PYTHON_BIN: ${{ matrix.runner == 'windows-latest' && 'python' || 'python3' }}
+      NPM_CONFIG_USERCONFIG: ${{ github.workspace }}/.npmrc
+      PIP_CONFIG_FILE: ${{ github.workspace }}/pip.conf
+      UV_CONFIG_FILE: ${{ github.workspace }}/uv.toml
     steps:
       - uses: actions/checkout@v4
 
