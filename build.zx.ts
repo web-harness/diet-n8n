@@ -324,10 +324,16 @@ async function applyDiet(target: DietTarget) {
 async function applyPatches() {
   console.log(chalk.green("Applying patches..."));
   await inBuild(async () => {
+    // Evaluations is unused and disabled in diet-n8n, so we hide it.
     const hideEvaluationsSnippet = `<script type="module">/*Hide Evaluations:*/(function(){"use strict";const e=()=>{document.querySelectorAll('div[data-test-id="radio-button-evaluation"]').forEach(o=>{const t=o.closest("label");t&&t.style.setProperty("display","none","important")})};e(),new MutationObserver(e).observe(document.body,{childList:!0,subtree:!0})})();</script>`;
+    // Almost all settings and help entries are unused in diet-n8n, so we hide them too.
+    const hideSettingsHelpSnippet = `<script type="module">/*Hide Settings Help:*/(function(){"use strict";const t=()=>{document.querySelectorAll('div[data-test-id="main-sidebar-help"]').forEach(r=>{let e=r.parentElement;e&&(e=e.parentElement),e&&e.style.setProperty("display","none","important")})};t(),new MutationObserver(t).observe(document.body,{childList:!0,subtree:!0})})();</script>`;
     const editorHtml = path.join(BUILD_NM, "n8n-editor-ui/dist/index.html");
     const editorHtmlOrig = await fs.promises.readFile(editorHtml, "utf8");
-    await fs.promises.writeFile(editorHtml, editorHtmlOrig.replace("</body>", `${hideEvaluationsSnippet}\n</body>`));
+    await fs.promises.writeFile(
+      editorHtml,
+      editorHtmlOrig.replace("</body>", [hideEvaluationsSnippet, hideSettingsHelpSnippet, "</body>"].join("\n")),
+    );
   });
   console.log(chalk.green("Patches applied"));
 }
