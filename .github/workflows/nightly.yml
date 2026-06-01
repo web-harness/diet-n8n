@@ -183,20 +183,8 @@ jobs:
           }
           trap cleanup EXIT
 
-          process_alive() {
-            if [ "${RUNNER_OS}" = "Windows" ]; then
-              tasklist //FI "PID eq $1" 2>/dev/null | grep -q " $1 "
-            else
-              kill -0 "$1" 2>/dev/null
-            fi
-          }
-
           HEALTHY=0
           for _ in $(seq 1 120); do
-            if ! process_alive "$PID"; then
-              echo "launch.js exited before n8n became healthy"
-              break
-            fi
             if curl -fsS http://127.0.0.1:5678/healthz >/dev/null; then
               echo "n8n healthy on :5678"
               HEALTHY=1
