@@ -133,11 +133,20 @@ function setupPythonTaskRunner(): void {
     die("unsupported Python version, skipping Python task runner setup", 0);
   }
 
-  fs.renameSync(path.join(tr, `.venv.${version}`), path.join(tr, ".venv"));
+  const versionedVenv = path.join(tr, `.venv.${version}`);
+  const activeVenv = path.join(tr, ".venv");
+  if (fs.existsSync(versionedVenv)) {
+    if (fs.existsSync(activeVenv)) fs.rmSync(activeVenv, { recursive: true, force: true });
+    fs.renameSync(versionedVenv, activeVenv);
+  } else if (!fs.existsSync(activeVenv)) {
+    die(`missing prebuilt ${versionedVenv} (package incomplete)`, 1);
+  }
+
   const otherVenvs = globSync(path.join(tr, ".venv.*"));
   for (const otherVenv of otherVenvs) {
+    if (path.resolve(otherVenv) === path.resolve(activeVenv)) continue;
     dbg(`removing incompatible venv: ${otherVenv}`);
-    fs.rmSync(otherVenv, { recursive: true });
+    fs.rmSync(otherVenv, { recursive: true, force: true });
   }
   execFileSync(chosen, ["-m", "venv", ".venv", "--upgrade"], { stdio: "inherit", cwd: tr });
   dbg("Python task runner setup complete");
@@ -156,10 +165,14 @@ async function extractNodeModules(): Promise<void> {
   const decompressedStream = new XzReadableStream(webStream);
   const nodeStream = Readable.fromWeb(decompressedStream as NodeWebReadableStream);
 
-  const extract = tar.extract(DEST_DIR, {
+  const nodeModulesDir = path.join(DEST_DIR, "node_modules");
+  fs.mkdirSync(nodeModulesDir, { recursive: true });
+
+  // Tar entries are packed from build/node_modules (paths like n8n/..., @n8n/...).
+  const extract = tar.extract(nodeModulesDir, {
     ignore: (name) => {
-      const relative = path.relative(DEST_DIR, name);
-      return !relative.startsWith("node_modules");
+      const relative = path.relative(nodeModulesDir, name);
+      return relative.startsWith("..");
     },
   });
 

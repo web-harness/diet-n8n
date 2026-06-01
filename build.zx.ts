@@ -136,7 +136,15 @@ async function writeNodeModulesChunks(
   const xzPath = path.join(chunksDir, "__bundle.tar.xz");
 
   console.log(chalk.green("Creating node_modules tar..."));
-  await pipeline(tarFs.pack(path.join(BUILD_DIR, NM)), fs.createWriteStream(tarPath));
+  await pipeline(
+    tarFs.pack(path.join(BUILD_DIR, NM), {
+      map: (header) => {
+        header.name = header.name.replace(/\\/g, "/");
+        return header;
+      },
+    }),
+    fs.createWriteStream(tarPath),
+  );
 
   console.log(chalk.green("Compressing tar with lzma-native..."));
   await pipeline(
