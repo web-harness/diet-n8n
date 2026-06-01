@@ -28,22 +28,21 @@ jobs:
       fail-fast: true
       matrix:
         include:
-          # CI iteration: re-enable all platforms after win-x64 verify is green.
-          # - runner: ubuntu-latest
-          #   diet_target: linux-x64
-          #   slug: linux-x64
-          # - runner: ubuntu-24.04-arm
-          #   diet_target: linux-arm64
-          #   slug: linux-arm64
+          - runner: ubuntu-latest
+            diet_target: linux-x64
+            slug: linux-x64
+          - runner: ubuntu-24.04-arm
+            diet_target: linux-arm64
+            slug: linux-arm64
           - runner: windows-latest
             diet_target: win-x64
             slug: win-x64
-          # - runner: macos-26-intel
-          #   diet_target: mac-x64
-          #   slug: mac-x64
-          # - runner: macos-latest
-          #   diet_target: mac-arm64
-          #   slug: mac-arm64
+          - runner: macos-26-intel
+            diet_target: mac-x64
+            slug: mac-x64
+          - runner: macos-latest
+            diet_target: mac-arm64
+            slug: mac-arm64
     env:
       DIET_TARGET: ${{ matrix.diet_target }}
       DIET_N8N_PYTHON_BIN: ${{ matrix.runner == 'windows-latest' && 'python' || 'python3' }}
@@ -122,22 +121,21 @@ jobs:
       fail-fast: true
       matrix:
         include:
-          # CI iteration: re-enable all platforms after win-x64 verify is green.
-          # - runner: ubuntu-latest
-          #   diet_target: linux-x64
-          #   slug: linux-x64
-          # - runner: ubuntu-24.04-arm
-          #   diet_target: linux-arm64
-          #   slug: linux-arm64
+          - runner: ubuntu-latest
+            diet_target: linux-x64
+            slug: linux-x64
+          - runner: ubuntu-24.04-arm
+            diet_target: linux-arm64
+            slug: linux-arm64
           - runner: windows-latest
             diet_target: win-x64
             slug: win-x64
-          # - runner: macos-26-intel
-          #   diet_target: mac-x64
-          #   slug: mac-x64
-          # - runner: macos-latest
-          #   diet_target: mac-arm64
-          #   slug: mac-arm64
+          - runner: macos-26-intel
+            diet_target: mac-x64
+            slug: mac-x64
+          - runner: macos-latest
+            diet_target: mac-arm64
+            slug: mac-arm64
     steps:
       - uses: actions/setup-node@v4
         with:
@@ -214,8 +212,6 @@ jobs:
           retention-days: 7
 
   release:
-    # CI iteration: restore when full matrix is re-enabled (expects 5 package artifacts).
-    if: false
     name: release Nightly
     needs: verify
     runs-on: ubuntu-latest
