@@ -28,21 +28,22 @@ jobs:
       fail-fast: true
       matrix:
         include:
-          - runner: ubuntu-latest
-            diet_target: linux-x64
-            slug: linux-x64
-          - runner: ubuntu-24.04-arm
-            diet_target: linux-arm64
-            slug: linux-arm64
+          # CI iteration: re-enable all platforms after win-x64 verify is green.
+          # - runner: ubuntu-latest
+          #   diet_target: linux-x64
+          #   slug: linux-x64
+          # - runner: ubuntu-24.04-arm
+          #   diet_target: linux-arm64
+          #   slug: linux-arm64
           - runner: windows-latest
             diet_target: win-x64
             slug: win-x64
-          - runner: macos-26-intel
-            diet_target: mac-x64
-            slug: mac-x64
-          - runner: macos-latest
-            diet_target: mac-arm64
-            slug: mac-arm64
+          # - runner: macos-26-intel
+          #   diet_target: mac-x64
+          #   slug: mac-x64
+          # - runner: macos-latest
+          #   diet_target: mac-arm64
+          #   slug: mac-arm64
     env:
       DIET_TARGET: ${{ matrix.diet_target }}
       DIET_N8N_PYTHON_BIN: ${{ matrix.runner == 'windows-latest' && 'python' || 'python3' }}
@@ -108,21 +109,22 @@ jobs:
       fail-fast: true
       matrix:
         include:
-          - runner: ubuntu-latest
-            diet_target: linux-x64
-            slug: linux-x64
-          - runner: ubuntu-24.04-arm
-            diet_target: linux-arm64
-            slug: linux-arm64
+          # CI iteration: re-enable all platforms after win-x64 verify is green.
+          # - runner: ubuntu-latest
+          #   diet_target: linux-x64
+          #   slug: linux-x64
+          # - runner: ubuntu-24.04-arm
+          #   diet_target: linux-arm64
+          #   slug: linux-arm64
           - runner: windows-latest
             diet_target: win-x64
             slug: win-x64
-          - runner: macos-26-intel
-            diet_target: mac-x64
-            slug: mac-x64
-          - runner: macos-latest
-            diet_target: mac-arm64
-            slug: mac-arm64
+          # - runner: macos-26-intel
+          #   diet_target: mac-x64
+          #   slug: mac-x64
+          # - runner: macos-latest
+          #   diet_target: mac-arm64
+          #   slug: mac-arm64
     steps:
       - uses: actions/setup-node@v4
         with:
@@ -151,15 +153,37 @@ jobs:
           npm init -y >/dev/null
           npm install "$PACKED"
           cd node_modules/diet-n8n
-          npm start >"${ROOT}/n8n-start.log" 2>&1 &
+          test -f node_modules/n8n/package.json
+
+          # package.json start is "node launch.js"; npm start backgrounds npm.cmd on Windows
+          # and $! is not the long-lived node process that serves :5678.
+          node launch.js >"${ROOT}/n8n-start.log" 2>&1 &
           PID=$!
+
           cleanup() {
-            kill "$PID" 2>/dev/null || true
-            wait "$PID" 2>/dev/null || true
+            if [ "${RUNNER_OS}" = "Windows" ]; then
+              taskkill //F //T //PID "$PID" 2>/dev/null || true
+            else
+              kill "$PID" 2>/dev/null || true
+              wait "$PID" 2>/dev/null || true
+            fi
           }
           trap cleanup EXIT
+
+          process_alive() {
+            if [ "${RUNNER_OS}" = "Windows" ]; then
+              tasklist //FI "PID eq $1" 2>/dev/null | grep -q " $1 "
+            else
+              kill -0 "$1" 2>/dev/null
+            fi
+          }
+
           HEALTHY=0
           for _ in $(seq 1 120); do
+            if ! process_alive "$PID"; then
+              echo "launch.js exited before n8n became healthy"
+              break
+            fi
             if curl -fsS http://127.0.0.1:5678/healthz >/dev/null; then
               echo "n8n healthy on :5678"
               HEALTHY=1
@@ -171,6 +195,8 @@ jobs:
           trap - EXIT
           if [ "$HEALTHY" -ne 1 ]; then
             echo "n8n did not become healthy within timeout"
+            echo "---- n8n-start.log (last 200 lines) ----"
+            tail -n 200 "${ROOT}/n8n-start.log" 2>/dev/null || true
             exit 1
           fi
           cd "$ROOT"
@@ -187,6 +213,8 @@ jobs:
           retention-days: 7
 
   release:
+    # CI iteration: restore when full matrix is re-enabled (expects 5 package artifacts).
+    if: false
     name: release Nightly
     needs: verify
     runs-on: ubuntu-latest

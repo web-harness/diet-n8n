@@ -40,9 +40,21 @@ const env = {
 
 assert(fs.existsSync(hooksFile), "hooks.js not found — run npm run build or bundle hooks.ts");
 
+// When stdout/stderr are redirected (CI smoke test), inherit breaks on Windows Git Bash.
+const logToPipe = !process.stdout.isTTY;
 const proc = childProcess.spawn(process.execPath, [n8nCli], {
   env,
-  stdio: "inherit",
+  stdio: logToPipe ? ["ignore", "pipe", "pipe"] : "inherit",
+});
+
+if (logToPipe) {
+  proc.stdout?.pipe(process.stdout);
+  proc.stderr?.pipe(process.stderr);
+}
+
+proc.on("error", (err) => {
+  console.error(`failed to spawn n8n: ${err.message}`);
+  process.exit(1);
 });
 
 proc.on("close", (code) => {

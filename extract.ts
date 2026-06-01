@@ -119,28 +119,7 @@ dbg("checksums OK");
 
 const compressed = Buffer.concat(chunks);
 
-dbg("decompressing xz and extracting tar, this may take a while...");
-
-const webStream = new ReadableStream({
-  start(controller) {
-    controller.enqueue(new Uint8Array(compressed));
-    controller.close();
-  },
-});
-
-const decompressedStream = new XzReadableStream(webStream);
-const nodeStream = Readable.fromWeb(decompressedStream as NodeWebReadableStream);
-
-const extract = tar.extract(DEST_DIR, {
-  ignore: (name) => {
-    const relative = path.relative(DEST_DIR, name);
-    return !relative.startsWith("node_modules");
-  },
-});
-
-nodeStream.pipe(extract);
-
-extract.on("finish", () => {
+function setupPythonTaskRunner(): void {
   dbg("extraction complete, setting up Python task runner...");
 
   const tr = path.join(DEST_DIR, "node_modules", "@n8n", "task-runner-python");
@@ -162,12 +141,43 @@ extract.on("finish", () => {
   }
   execFileSync(chosen, ["-m", "venv", ".venv", "--upgrade"], { stdio: "inherit", cwd: tr });
   dbg("Python task runner setup complete");
-});
+}
 
-extract.on("error", (err) => {
-  die(`extraction failed: ${err.message}`);
-});
+async function extractNodeModules(): Promise<void> {
+  dbg("decompressing xz and extracting tar, this may take a while...");
 
-nodeStream.on("error", (err) => {
-  die(`upstream stream failed: ${err.message}`);
+  const webStream = new ReadableStream({
+    start(controller) {
+      controller.enqueue(new Uint8Array(compressed));
+      controller.close();
+    },
+  });
+
+  const decompressedStream = new XzReadableStream(webStream);
+  const nodeStream = Readable.fromWeb(decompressedStream as NodeWebReadableStream);
+
+  const extract = tar.extract(DEST_DIR, {
+    ignore: (name) => {
+      const relative = path.relative(DEST_DIR, name);
+      return !relative.startsWith("node_modules");
+    },
+  });
+
+  await new Promise<void>((resolve, reject) => {
+    extract.on("finish", () => {
+      try {
+        setupPythonTaskRunner();
+        resolve();
+      } catch (err) {
+        reject(err);
+      }
+    });
+    extract.on("error", (err) => reject(err));
+    nodeStream.on("error", (err) => reject(err));
+    nodeStream.pipe(extract);
+  });
+}
+
+extractNodeModules().catch((err: Error) => {
+  die(err instanceof Error ? err.message : String(err));
 });
