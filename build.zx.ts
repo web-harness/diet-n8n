@@ -6,6 +6,7 @@ import { finished, pipeline } from "stream/promises";
 import zlib from "zlib";
 import fs from "fs";
 import * as tar from "tar";
+import tarFs from "tar-fs";
 import { parse as parseEnv } from "dotenv";
 import esbuild from "esbuild";
 import { fileTypeFromFile } from "file-type";
@@ -135,7 +136,7 @@ async function writeNodeModulesChunks(
   const xzPath = path.join(chunksDir, "__bundle.tar.xz");
 
   console.log(chalk.green("Creating node_modules tar..."));
-  await tar.c({ cwd: BUILD_DIR, file: tarPath, portable: true }, [NM]);
+  await pipeline(tarFs.pack(path.join(BUILD_DIR, NM)), fs.createWriteStream(tarPath));
 
   console.log(chalk.green("Compressing tar with lzma-native..."));
   await pipeline(
