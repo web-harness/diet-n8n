@@ -94,10 +94,23 @@ jobs:
         shell: bash
         run: npm run build
 
+      - name: Verify dist output
+        shell: bash
+        run: |
+          set -euo pipefail
+          test -f dist/package.json
+          test -f dist/launch.js
+          test "$(find dist/chunks -maxdepth 1 -name 'node_modules.tar.xz.*' | wc -l)" -ge 1
+
+      - name: Stage dist for artifact upload
+        shell: bash
+        run: cp -a dist dist-artifact
+
       - uses: actions/upload-artifact@v4
         with:
           name: dist-${{ matrix.slug }}
-          path: dist/
+          path: dist-artifact/
+          if-no-files-found: error
           retention-days: 7
 
   verify:

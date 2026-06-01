@@ -128,6 +128,52 @@ function splitSuffix(i: number): string {
   return suffix.length < 2 ? suffix.padStart(2, "a") : suffix;
 }
 
+/** lzma-native tar.xz, written in CHUNK-sized pieces (no full-archive Buffer). */
+async function writeNodeModulesChunks(
+  chunksDir: string,
+): Promise<{ chunkNames: string[]; totalBytes: number }> {
+  const chunkNames: string[] = [];
+  let pending = Buffer.alloc(0);
+  let totalBytes = 0;
+
+  await pipeline(
+    tar.c({ cwd: BUILD_DIR }, [NM]),
+    lzma.createCompressor({ preset: 9 | (1 << 31) }),
+    new Writable({
+      write(chunk, _, cb) {
+        try {
+          pending = Buffer.concat([pending, chunk]);
+          while (pending.length >= CHUNK) {
+            const name = `node_modules.tar.xz.${splitSuffix(chunkNames.length)}`;
+            fs.writeFileSync(path.join(chunksDir, name), pending.subarray(0, CHUNK));
+            chunkNames.push(name);
+            totalBytes += CHUNK;
+            pending = pending.subarray(CHUNK);
+          }
+          cb();
+        } catch (err) {
+          cb(err as Error);
+        }
+      },
+      final(cb) {
+        try {
+          if (pending.length > 0) {
+            const name = `node_modules.tar.xz.${splitSuffix(chunkNames.length)}`;
+            fs.writeFileSync(path.join(chunksDir, name), pending);
+            chunkNames.push(name);
+            totalBytes += pending.length;
+          }
+          cb();
+        } catch (err) {
+          cb(err as Error);
+        }
+      },
+    }),
+  );
+
+  return { chunkNames, totalBytes };
+}
+
 function keepPlatformToken(tok: string, keep: string[]) {
   return keep.some((k) => tok === k || tok.startsWith(`${k}-`));
 }
@@ -378,24 +424,8 @@ async function packageDist(target: DietTarget) {
   console.log(chalk.green("Packaging dist..."));
   const { version } = n8nPkg();
   const chunksDir = path.join(DIST_DIR, "chunks");
-
-  const parts: Buffer[] = [];
-  await pipeline(
-    tar.c({ cwd: BUILD_DIR }, [NM]),
-    lzma.createCompressor({ preset: 9 | (1 << 31) }),
-    new Writable({
-      write(chunk, _, cb) {
-        parts.push(Buffer.from(chunk));
-        cb();
-      },
-    }),
-  );
-  const xz = Buffer.concat(parts);
-  const prefix = path.join(chunksDir, "node_modules.tar.xz.");
-  for (let i = 0, off = 0; off < xz.length; i++, off += CHUNK)
-    await fs.promises.writeFile(`${prefix}${splitSuffix(i)}`, xz.subarray(off, off + CHUNK));
-
-  const chunkNames = (await fs.promises.readdir(chunksDir)).filter((f) => f.startsWith("node_modules.tar.xz.")).sort();
+  const { chunkNames, totalBytes } = await writeNodeModulesChunks(chunksDir);
+  console.log(chalk.green(`Compressed node_modules (${totalBytes} bytes, ${chunkNames.length} chunks)`));
   const sums = await Promise.all(
     chunkNames.map(async (name) => {
       const data = await fs.promises.readFile(path.join(chunksDir, name));
