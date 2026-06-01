@@ -465,7 +465,13 @@ async function packageDist(target: DietTarget) {
   });
 
   await fs.promises.chmod(path.join(DIST_DIR, "extract.js"), 0o755);
-  await fs.promises.copyFile(MINIMAL_ENV, path.join(DIST_DIR, "minimal.env"));
+  let minimalBody = await fs.promises.readFile(MINIMAL_ENV, "utf8");
+  if (target === "win-x64") {
+    minimalBody = minimalBody
+      .replace("N8N_NATIVE_PYTHON_RUNNER=true", "N8N_NATIVE_PYTHON_RUNNER=false")
+      .replace("N8N_PYTHON_ENABLED=true", "N8N_PYTHON_ENABLED=false");
+  }
+  await fs.promises.writeFile(path.join(DIST_DIR, "minimal.env"), minimalBody);
 
   const { os, cpu } = TARGET[target];
   await fs.promises.writeFile(

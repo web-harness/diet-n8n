@@ -36,14 +36,17 @@ assert(fs.existsSync(hooksFile), "hooks.js not found — run npm run build or bu
 const env: Record<string, string> = {
   ...process.env,
   N8N_USER_FOLDER: ROOT,
-  // Relative path: n8n splits EXTERNAL_HOOK_FILES on ":" (breaks "D:\..." on Windows).
-  EXTERNAL_HOOK_FILES: "hooks.js",
+  EXTERNAL_HOOK_FILES: path.resolve(hooksFile),
   ...parseMinimalEnv(fs.readFileSync(path.join(ROOT, "minimal.env"), "utf8")),
 };
 
 if (process.platform === "win32") {
-  // Unix fork()-based native runner; Windows needs the external task-runner path.
+  // n8n defaults to colon-separated EXTERNAL_HOOK_FILES (breaks "D:\...").
+  env.EXTERNAL_HOOK_FILES_SEPARATOR = ";";
+  env.EXTERNAL_HOOK_FILES = path.resolve(hooksFile);
+  // Internal native runner uses Unix fork(); not available on Windows.
   env.N8N_NATIVE_PYTHON_RUNNER = "false";
+  env.N8N_PYTHON_ENABLED = "false";
 }
 
 // When stdout/stderr are redirected (CI smoke test), inherit breaks on Windows Git Bash.
