@@ -31,19 +31,26 @@ function parseMinimalEnv(content: string): Record<string, string> {
 
 const hooksFile = path.join(ROOT, "hooks.js");
 
-const env = {
+assert(fs.existsSync(hooksFile), "hooks.js not found — run npm run build or bundle hooks.ts");
+
+const env: Record<string, string> = {
   ...process.env,
   N8N_USER_FOLDER: ROOT,
-  EXTERNAL_HOOK_FILES: hooksFile,
+  // Relative path: n8n splits EXTERNAL_HOOK_FILES on ":" (breaks "D:\..." on Windows).
+  EXTERNAL_HOOK_FILES: "hooks.js",
   ...parseMinimalEnv(fs.readFileSync(path.join(ROOT, "minimal.env"), "utf8")),
 };
 
-assert(fs.existsSync(hooksFile), "hooks.js not found — run npm run build or bundle hooks.ts");
+if (process.platform === "win32") {
+  // Unix fork()-based native runner; Windows needs the external task-runner path.
+  env.N8N_NATIVE_PYTHON_RUNNER = "false";
+}
 
 // When stdout/stderr are redirected (CI smoke test), inherit breaks on Windows Git Bash.
 const logToPipe = !process.stdout.isTTY;
 const proc = childProcess.spawn(process.execPath, [n8nCli], {
   env,
+  cwd: ROOT,
   stdio: logToPipe ? ["ignore", "pipe", "pipe"] : "inherit",
 });
 
