@@ -3,7 +3,6 @@ import crypto from "crypto";
 import https from "https";
 import path from "path";
 import { finished, pipeline } from "stream/promises";
-import { Writable } from "stream";
 import zlib from "zlib";
 import fs from "fs";
 import * as tar from "tar";
@@ -128,48 +127,43 @@ function splitSuffix(i: number): string {
   return suffix.length < 2 ? suffix.padStart(2, "a") : suffix;
 }
 
-/** lzma-native tar.xz, written in CHUNK-sized pieces (no full-archive Buffer). */
+/** lzma-native xz of node_modules, split into CHUNK-sized dist pieces. */
 async function writeNodeModulesChunks(
   chunksDir: string,
 ): Promise<{ chunkNames: string[]; totalBytes: number }> {
-  const chunkNames: string[] = [];
-  let pending = Buffer.alloc(0);
-  let totalBytes = 0;
+  const tarPath = path.join(chunksDir, "__bundle.tar");
+  const xzPath = path.join(chunksDir, "__bundle.tar.xz");
 
+  console.log(chalk.green("Creating node_modules tar..."));
+  await tar.c({ cwd: BUILD_DIR, file: tarPath, portable: true }, [NM]);
+
+  console.log(chalk.green("Compressing tar with lzma-native..."));
   await pipeline(
-    tar.c({ cwd: BUILD_DIR }, [NM]),
+    fs.createReadStream(tarPath),
     lzma.createCompressor({ preset: 9 | (1 << 31) }),
-    new Writable({
-      write(chunk, _, cb) {
-        try {
-          pending = Buffer.concat([pending, chunk]);
-          while (pending.length >= CHUNK) {
-            const name = `node_modules.tar.xz.${splitSuffix(chunkNames.length)}`;
-            fs.writeFileSync(path.join(chunksDir, name), pending.subarray(0, CHUNK));
-            chunkNames.push(name);
-            totalBytes += CHUNK;
-            pending = pending.subarray(CHUNK);
-          }
-          cb();
-        } catch (err) {
-          cb(err as Error);
-        }
-      },
-      final(cb) {
-        try {
-          if (pending.length > 0) {
-            const name = `node_modules.tar.xz.${splitSuffix(chunkNames.length)}`;
-            fs.writeFileSync(path.join(chunksDir, name), pending);
-            chunkNames.push(name);
-            totalBytes += pending.length;
-          }
-          cb();
-        } catch (err) {
-          cb(err as Error);
-        }
-      },
-    }),
+    fs.createWriteStream(xzPath),
   );
+  await fs.promises.rm(tarPath, { force: true });
+
+  const { size } = await fs.promises.stat(xzPath);
+  const chunkNames: string[] = [];
+  let totalBytes = 0;
+  const handle = await fs.promises.open(xzPath, "r");
+  try {
+    for (let off = 0; off < size; ) {
+      const len = Math.min(CHUNK, size - off);
+      const buf = Buffer.alloc(len);
+      await handle.read(buf, 0, len, off);
+      const name = `node_modules.tar.xz.${splitSuffix(chunkNames.length)}`;
+      await fs.promises.writeFile(path.join(chunksDir, name), buf);
+      chunkNames.push(name);
+      totalBytes += len;
+      off += len;
+    }
+  } finally {
+    await handle.close();
+    await fs.promises.rm(xzPath, { force: true });
+  }
 
   return { chunkNames, totalBytes };
 }
