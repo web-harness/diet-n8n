@@ -1,0 +1,63 @@
+{
+  "name": "Diet AI Chat Trace",
+  "nodes": [
+    {
+      "parameters": {
+        "public": true,
+        "mode": "webhook",
+        "options": {
+          "responseMode": "lastNode"
+        }
+      },
+      "id": "diet-chat-trigger",
+      "name": "When chat message received",
+      "type": "@n8n/n8n-nodes-langchain.chatTrigger",
+      "typeVersion": 1.4,
+      "position": [0, 0],
+      "webhookId": "diet-ai-chat-trace"
+    },
+    {
+      "parameters": {
+        "promptType": "define",
+        "text": "={{ $json.chatInput }}",
+        "options": {}
+      },
+      "id": "diet-ai-agent",
+      "name": "AI Agent",
+      "type": "@n8n/n8n-nodes-langchain.agent",
+      "typeVersion": 3.1,
+      "position": [280, 0]
+    },
+    {
+      "parameters": {
+        "model": {
+          "__rl": true,
+          "mode": "id",
+          "value": "Qwen3.5-0.8B"
+        },
+        "options": {}
+      },
+      "id": "diet-openai-model",
+      "name": "OpenAI Chat Model",
+      "type": "@n8n/n8n-nodes-langchain.lmChatOpenAi",
+      "typeVersion": 1.3,
+      "position": [280, 220],
+      "credentials": {
+        "openAiApi": {
+          "name": "Llamafile Trace"
+        }
+      }
+    }
+  ],
+  "connections": {
+    "When chat message received": {
+      "main": [[{ "node": "AI Agent", "type": "main", "index": 0 }]]
+    },
+    "OpenAI Chat Model": {
+      "ai_languageModel": [[{ "node": "AI Agent", "type": "ai_languageModel", "index": 0 }]]
+    }
+  },
+  "settings": {
+    "executionOrder": "v1"
+  }
+}

@@ -37,6 +37,8 @@ npm run build
 
 Set `DIET_TARGET` to one of `linux-x64`, `linux-arm64`, `win-x64`, `mac-x64`, `mac-arm64` (default: host OS/arch). Output lands in `dist/`.
 
+The build starts a local [llamafile](https://github.com/Mozilla-Ocho/llamafile) inference server and runs a committed `workflow.json` (Chat Trigger → AI Agent → OpenAI Chat Model) during the `NODE_DEBUG=module` trace so AI node dependencies are retained. Export that workflow once from the n8n editor and commit it at the repo root; the build fails if it is missing. Llamafile is downloaded into `build/.llamafile/` (not shipped in dist).
+
 The result is a reduction from somewhere north of 2GB to about 35MB (compressed).
 
 diet-n8n extracts the chunks in a post-install script, which unpacks to about 600MB on disk.

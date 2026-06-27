@@ -1,6 +1,7 @@
 import assert from "assert";
 import crypto from "crypto";
 import https from "https";
+import os from "os";
 import path from "path";
 import { finished, pipeline } from "stream/promises";
 import zlib from "zlib";
@@ -14,7 +15,7 @@ import { glob } from "glob";
 import lzma from "lzma-native";
 import waitOn from "wait-on";
 
-import { $, cd, chalk, within } from "zx";
+import { $, cd, chalk, within, type ProcessPromise } from "zx";
 
 const ROOT = __dirname;
 const NPMRC = path.join(ROOT, ".npmrc");
@@ -23,6 +24,11 @@ const UV_CONF = path.join(ROOT, "uv.toml");
 const BUILD_DIR = path.join(ROOT, "build");
 const DIST_DIR = path.join(ROOT, "dist");
 const MINIMAL_ENV = path.join(ROOT, "minimal.env");
+const WORKFLOW_JSON = path.join(ROOT, "workflow.json");
+const LLAMAFILE_URL = "https://huggingface.co/mozilla-ai/llamafile_0.10/resolve/main/Qwen3.5-0.8B-Q8_0.llamafile";
+const LLAMAFILE_NAME = "Qwen3.5-0.8B-Q8_0.llamafile";
+const LLAMAFILE_EXPECTED_BYTES = 1_339_309_799;
+const LLAMAFILE_DIR = path.join(BUILD_DIR, ".llamafile");
 const NM = "node_modules";
 const BUILD_NM = path.join(BUILD_DIR, NM);
 const CHUNK = 10 * 1024 * 1024;
@@ -129,9 +135,7 @@ function splitSuffix(i: number): string {
 }
 
 /** lzma-native xz of node_modules, split into CHUNK-sized dist pieces. */
-async function writeNodeModulesChunks(
-  chunksDir: string,
-): Promise<{ chunkNames: string[]; totalBytes: number }> {
+async function writeNodeModulesChunks(chunksDir: string): Promise<{ chunkNames: string[]; totalBytes: number }> {
   const tarPath = path.join(chunksDir, "__bundle.tar");
   const xzPath = path.join(chunksDir, "__bundle.tar.xz");
 
@@ -240,7 +244,7 @@ async function installUpstream() {
   console.log(chalk.green("Installing upstream n8n..."));
   await inBuild(async () => {
     await $`npm init -y`;
-    await $`npm install n8n --omit=dev --no-audit --no-fund --save`;
+    await $`npm install n8n@latest --omit=dev --no-audit --no-fund`;
   });
   const { version } = n8nPkg();
   console.log(chalk.green(`n8n ${version} installed`));
@@ -317,47 +321,307 @@ async function updateMinimalEnv() {
   console.log(chalk.green("minimal.env updated"));
 }
 
+function zxPath(p: string) {
+  return p.replace(/\\/g, "/");
+}
+
+async function ensureLlamafile(): Promise<string> {
+  await fs.promises.mkdir(LLAMAFILE_DIR, { recursive: true });
+  const dest = path.join(LLAMAFILE_DIR, LLAMAFILE_NAME);
+  const stat = await fs.promises.stat(dest).catch(() => null);
+  if (stat?.size === LLAMAFILE_EXPECTED_BYTES) return dest;
+  if (stat) await fs.promises.rm(dest, { force: true });
+
+  console.log(chalk.green("Downloading llamafile..."));
+  const out = zxPath(dest);
+  if (process.platform === "win32") {
+    await $`curl.exe -L --fail -o ${out} ${LLAMAFILE_URL}`;
+  } else {
+    await $`curl -L --fail -o ${out} ${LLAMAFILE_URL}`;
+  }
+  const { size } = await fs.promises.stat(dest);
+  if (size !== LLAMAFILE_EXPECTED_BYTES) {
+    throw new Error(`llamafile download size mismatch: expected ${LLAMAFILE_EXPECTED_BYTES}, got ${size}`);
+  }
+  return dest;
+}
+
+async function ensureApeLoader(): Promise<string> {
+  if (process.platform === "darwin") {
+    const ape = path.join(LLAMAFILE_DIR, "ape-x86_64.macho");
+    if (await fs.promises.stat(ape).catch(() => null)) return ape;
+    const url = "https://cosmo.zip/pub/cosmos/bin/ape-x86_64.macho";
+    console.log(chalk.green("Downloading cosmopolitan APE loader..."));
+    await $`curl -L --fail -o ${zxPath(ape)} ${url}`;
+    await fs.promises.chmod(ape, 0o755);
+    return ape;
+  }
+
+  const arch = process.arch === "arm64" ? "aarch64" : "x86_64";
+  const ape = path.join(LLAMAFILE_DIR, `ape-${arch}.elf`);
+  if (await fs.promises.stat(ape).catch(() => null)) return ape;
+  const url = `https://cosmo.zip/pub/cosmos/bin/ape-${arch}.elf`;
+  console.log(chalk.green("Downloading cosmopolitan APE loader..."));
+  await $`curl -L --fail -o ${zxPath(ape)} ${url}`;
+  await fs.promises.chmod(ape, 0o755);
+  return ape;
+}
+
+async function stopBg(proc: ProcessPromise) {
+  try {
+    proc.kill("SIGTERM");
+  } catch {
+    /* already exited */
+  }
+  await proc.nothrow();
+}
+
+async function stopWinPid(pid: number) {
+  await $`taskkill /F /T /PID ${pid}`.nothrow();
+}
+
+async function startLlamafile(): Promise<{ proc: ProcessPromise } | { pid: number }> {
+  const llamafile = await ensureLlamafile();
+  const port = process.env.LLAMAFILE_PORT || "8080";
+  const logPath = path.join(LLAMAFILE_DIR, "server.log");
+  const args = ["--server", "--host", "127.0.0.1", "--port", port, "--jinja"];
+  if (process.platform === "darwin" && process.arch === "arm64") args.push("-ngl", "0");
+  const ready = waitOn({
+    resources: [`http-get://127.0.0.1:${port}/v1/models`],
+    timeout: Number(process.env.LLAMAFILE_WAIT_MS || 1_200_000),
+    interval: 2000,
+  });
+
+  if (process.platform === "win32") {
+    const winExe = `${llamafile}.exe`;
+    await fs.promises.copyFile(llamafile, winExe);
+    const ps = [
+      "$p = Start-Process",
+      `-FilePath '${zxPath(winExe).replace(/'/g, "''")}'`,
+      `-ArgumentList ${args.map((a) => `'${a}'`).join(",")}`,
+      "-PassThru -WindowStyle Hidden;",
+      "Write-Output $p.Id",
+    ].join(" ");
+    const pid = Number((await $`powershell -NoProfile -Command ${ps}`).stdout.trim());
+    if (!pid) throw new Error("failed to start llamafile on Windows");
+    await ready;
+    return { pid };
+  }
+
+  const logStream = fs.createWriteStream(logPath);
+  const run$ = $({ env: { ...process.env, TMPDIR: LLAMAFILE_DIR } });
+  let proc: ProcessPromise;
+  if (process.platform === "linux" || (process.platform === "darwin" && process.arch !== "arm64")) {
+    proc = run$`${await ensureApeLoader()} ${llamafile} ${args}`.stdio("pipe", "pipe", "ignore").quiet();
+  } else if (process.platform === "darwin") {
+    await fs.promises.chmod(llamafile, 0o755);
+    for (const f of await glob(path.join(LLAMAFILE_DIR, ".ape*"))) await fs.promises.rm(f, { force: true });
+    proc = run$`/bin/sh ${llamafile} ${args}`.stdio("pipe", "pipe", "ignore").quiet();
+  } else {
+    await fs.promises.chmod(llamafile, 0o755);
+    proc = run$`${llamafile} ${args}`.stdio("pipe", "pipe", "ignore").quiet();
+  }
+  proc.stdout.pipe(logStream, { end: false });
+  proc.stderr.pipe(logStream, { end: false });
+  const failed = proc.then((r) => {
+    if (r.exitCode !== 0) throw new Error(`llamafile exited with code ${r.exitCode}`);
+  });
+  await Promise.race([ready, failed]).catch(async (err) => {
+    logStream.end();
+    await finished(logStream).catch(() => undefined);
+    const log = await fs.promises.readFile(logPath, "utf8").catch(() => "");
+    if (log) console.error(chalk.red("llamafile log (last 8k):\n"), log.slice(-8_000));
+    throw err;
+  });
+  return { proc };
+}
+
+function sleep(ms: number) {
+  return new Promise<void>((resolve) => setTimeout(resolve, ms));
+}
+
+function assertNoMissingModules(logs: string) {
+  const match = logs.replace(/\\/g, "/").match(/Cannot find module '([^']+)'/);
+  if (match) throw new Error(`n8n trace missing module: ${match[1]}`);
+}
+
+function modulesFromTraceLog(logs: string): Set<string> {
+  const keep = new Set<string>();
+  for (const m of logs.replace(/\\/g, "/").matchAll(/node_modules\/(@[^\s/]+\/[^\s/]+|[^\s/@]+)/g))
+    keep.add(m[1].split("/")[0]);
+  return keep;
+}
+
+async function waitForN8nReady(baseUrl: string) {
+  const deadline = Date.now() + Number(process.env.N8N_READY_MS || 180_000);
+  while (Date.now() < deadline) {
+    const res = await fetch(`${baseUrl}/rest/projects`);
+    const body = await res.text();
+    if (!body.includes("starting up")) return;
+    await sleep(2000);
+  }
+  throw new Error("n8n never finished starting");
+}
+
+async function runAiChatTrace(baseUrl: string, llamafileBaseUrl: string) {
+  let cookie = "";
+  const capture = (res: Response) => {
+    for (const part of res.headers.getSetCookie()) {
+      const token = part.split(";")[0] ?? "";
+      cookie = cookie ? `${cookie}; ${token}` : token;
+    }
+  };
+  const request = async (p: string, init: RequestInit = {}) => {
+    const headers = new Headers(init.headers);
+    if (!headers.has("Content-Type") && init.body) headers.set("Content-Type", "application/json");
+    if (cookie) headers.set("Cookie", cookie);
+    const res = await fetch(`${baseUrl}${p}`, { ...init, headers });
+    capture(res);
+    if (!res.ok) throw new Error(`${init.method ?? "GET"} ${p} failed (${res.status}): ${await res.text()}`);
+    return res;
+  };
+
+  const loginDeadline = Date.now() + 60_000;
+  while (Date.now() < loginDeadline) {
+    const res = await fetch(`${baseUrl}/rest/projects`, { headers: cookie ? { Cookie: cookie } : {} });
+    capture(res);
+    if (cookie) break;
+    await sleep(1000);
+  }
+  if (!cookie) throw new Error("auto-login hook did not issue n8n-auth cookie");
+
+  const cred = (await (
+    await request("/rest/credentials", {
+      method: "POST",
+      body: JSON.stringify({
+        name: "Llamafile Trace",
+        type: "openAiApi",
+        data: { apiKey: "sk-no-key-required", url: llamafileBaseUrl },
+      }),
+    })
+  ).json()) as { data: { id: string } };
+
+  const workflow = JSON.parse(await fs.promises.readFile(WORKFLOW_JSON, "utf8")) as {
+    nodes: { type: string; webhookId?: string; credentials?: Record<string, { id?: string; name?: string }> }[];
+    connections: Record<string, unknown>;
+    name: string;
+    settings?: Record<string, unknown>;
+  };
+  const chatNode = workflow.nodes.find((n) => n.type === "@n8n/n8n-nodes-langchain.chatTrigger");
+  if (!chatNode?.webhookId) throw new Error("workflow.json missing chatTrigger webhookId");
+  for (const node of workflow.nodes) {
+    if (node.credentials?.openAiApi) node.credentials.openAiApi = { id: cred.data.id, name: "Llamafile Trace" };
+  }
+
+  const saved = (await (
+    await request("/rest/workflows", { method: "POST", body: JSON.stringify(workflow) })
+  ).json()) as { data: { id: string; versionId: string } };
+  await request(`/rest/workflows/${saved.data.id}/activate`, {
+    method: "POST",
+    body: JSON.stringify({ versionId: saved.data.versionId }),
+  });
+  await (
+    await request(`/webhook/${chatNode.webhookId}/chat`, {
+      method: "POST",
+      body: JSON.stringify({
+        action: "sendMessage",
+        chatInput: "Reply with exactly: trace-ok",
+        sessionId: "diet-trace",
+      }),
+    })
+  ).text();
+
+  const deadline = Date.now() + 120_000;
+  let executionId: string | undefined;
+  while (Date.now() < deadline) {
+    const list = (await (await request("/rest/executions?limit=10")).json()) as {
+      data?: { results?: { id: string; workflowId: string; status: string; stoppedAt: string | null }[] };
+    };
+    const exec = list.data?.results?.find((e) => e.workflowId === saved.data.id);
+    if (!exec) {
+      await sleep(1000);
+      continue;
+    }
+    if (!exec.stoppedAt && (exec.status === "running" || exec.status === "waiting" || exec.status === "new")) {
+      await sleep(1000);
+      continue;
+    }
+    executionId = exec.id;
+    break;
+  }
+  if (!executionId) throw new Error("AI chat trace execution never finished");
+
+  const detail = (await (await request(`/rest/executions/${executionId}`)).json()) as {
+    data?: { customData?: { response_ai_agent?: string } };
+  };
+  if (!detail.data?.customData?.response_ai_agent) throw new Error("AI chat trace did not reach AI Agent node");
+}
+
 async function traceN8n(): Promise<Set<string>> {
+  if (!fs.existsSync(WORKFLOW_JSON)) {
+    throw new Error(`workflow.json not found at ${WORKFLOW_JSON}`);
+  }
+
   const minimal = parseEnv(await fs.promises.readFile(MINIMAL_ENV, "utf8"));
   const port = minimal.N8N_PORT || "5678";
   const traceDir = path.join(BUILD_DIR, ".n8n-diet-trace");
   const logs = path.join(BUILD_DIR, "logs.txt");
+  const llamafileBaseUrl = process.env.LLAMAFILE_BASE_URL || "http://127.0.0.1:8080/v1";
+  const llamaBg = await startLlamafile();
+  const hooksFile = path.join(os.tmpdir(), "diet-hooks.js");
+  await esbuild.build({
+    entryPoints: [path.join(ROOT, "hooks.ts")],
+    bundle: true,
+    platform: "node",
+    format: "cjs",
+    outfile: hooksFile,
+    external: ["n8n", "router/lib/layer"],
+  });
+
   await fs.promises.rm(traceDir, { recursive: true, force: true });
   await fs.promises.mkdir(traceDir, { recursive: true });
   const logStream = fs.createWriteStream(logs);
+  const host = `127.0.0.1:${port}`;
+  const baseUrl = `http://${host}`;
 
+  const { NODE_OPTIONS: _buildTsx, ...hostEnv } = process.env;
   $.env = {
-    ...process.env,
+    ...hostEnv,
     ...minimal,
     N8N_USER_FOLDER: traceDir,
     N8N_DIAGNOSTICS_ENABLED: "true",
     NODE_DEBUG: "module",
+    EXTERNAL_HOOK_FILES: hooksFile,
+    ...(process.platform === "win32" ? { EXTERNAL_HOOK_FILES_SEPARATOR: ";" } : {}),
   };
 
   const proc = $`node ${n8nCliFromBuild()}`.stdio("pipe", "pipe", "ignore").quiet();
   proc.stdout.pipe(logStream, { end: false });
   proc.stderr.pipe(logStream, { end: false });
-  const host = `127.0.0.1:${port}`;
-  await waitOn({ resources: [`tcp:${host}`], timeout: Number(process.env.SERVER_WAIT_MS || 180_000), interval: 1000 });
-  await waitOn({
-    resources: [`http-get://${host}/`, `http-get://${host}/healthz`],
-    interval: 2000,
-    window: 20_000,
-  });
-  await waitOn({
-    resources: [`http-get://${host}/healthz`],
-    interval: 1000,
-    window: Number(process.env.POST_READY_MS || 15_000),
-  });
-  proc.kill("SIGTERM");
-  await proc.nothrow();
-  logStream.end();
-  await finished(logStream);
 
-  const keep = new Set<string>();
-  for (const m of (await fs.promises.readFile(logs, "utf8")).matchAll(/node_modules\/(@[^\s/]+\/[^\s/]+|[^\s/@]+)/g))
-    keep.add(m[1].split("/")[0]);
-  return keep;
+  try {
+    await waitOn({
+      resources: [`tcp:${host}`, `http-get://${host}/healthz`],
+      timeout: Number(process.env.SERVER_WAIT_MS || 180_000),
+      interval: 2000,
+    });
+    await waitForN8nReady(baseUrl);
+    await runAiChatTrace(baseUrl, llamafileBaseUrl);
+
+    const logBody = await fs.promises.readFile(logs, "utf8");
+    assertNoMissingModules(logBody);
+    return modulesFromTraceLog(logBody);
+  } catch (err) {
+    const logBody = await fs.promises.readFile(logs, "utf8").catch(() => "");
+    if (logBody) console.error(chalk.red("n8n trace log (last 12k):\n"), logBody.slice(-12_000));
+    throw err;
+  } finally {
+    await stopBg(proc);
+    if ("pid" in llamaBg) await stopWinPid(llamaBg.pid);
+    else await stopBg(llamaBg.proc);
+    logStream.end();
+    await finished(logStream).catch(() => undefined);
+  }
 }
 
 async function pruneNodeModules(target: DietTarget, keep: Set<string>) {

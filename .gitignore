@@ -148,4 +148,5 @@ vite.config.ts.timestamp-*
 .vvite/
 
 build/
+build/.llamafile/
 hooks.js
