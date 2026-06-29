@@ -34,10 +34,10 @@ const hooksFile = path.join(ROOT, "hooks.js");
 assert(fs.existsSync(hooksFile), "hooks.js not found — run npm run build or bundle hooks.ts");
 
 const env: Record<string, string> = {
-  ...process.env,
   N8N_USER_FOLDER: ROOT,
   EXTERNAL_HOOK_FILES: path.resolve(hooksFile),
   ...parseMinimalEnv(fs.readFileSync(path.join(ROOT, "minimal.env"), "utf8")),
+  ...process.env,
 };
 
 if (process.platform === "win32") {
