@@ -83,6 +83,14 @@ jobs:
           "$DIET_N8N_PYTHON_BIN" -m venv --help >/dev/null
           uv --version
 
+      - name: Verify supply chain config
+        shell: bash
+        run: |
+          set -euo pipefail
+          grep -qx 'min-release-age=3' .npmrc
+          grep -q 'uploaded-prior-to = P3D' pip.conf
+          grep -q 'exclude-newer = "3 days"' uv.toml
+
       - name: npm ci
         shell: bash
         env:
@@ -186,6 +194,10 @@ jobs:
             if curl -fsS http://127.0.0.1:5678/healthz >/dev/null; then
               echo "n8n healthy on :5678"
               HEALTHY=1
+              break
+            fi
+            if ! kill -0 "$PID" 2>/dev/null; then
+              echo "launch.js exited before health check passed"
               break
             fi
             sleep 5
