@@ -152,6 +152,31 @@ function setupPythonTaskRunner(): void {
   dbg("Python task runner setup complete");
 }
 
+/** Re-link nested zod copies to one canonical tree after tar extract (Windows loses symlinks). */
+function dedupeNestedZod(nodeModulesDir: string): void {
+  const canonical = path.join(nodeModulesDir, "n8n-workflow/node_modules/zod");
+  if (!fs.existsSync(canonical)) return;
+
+  const canonicalVersion = JSON.parse(fs.readFileSync(path.join(canonical, "package.json"), "utf8")).version as string;
+  let linked = 0;
+
+  for (const zodDir of globSync("@n8n/**/node_modules/zod", { cwd: nodeModulesDir, absolute: true })) {
+    if (path.resolve(zodDir) === path.resolve(canonical)) continue;
+
+    const version = JSON.parse(fs.readFileSync(path.join(zodDir, "package.json"), "utf8")).version as string;
+    if (version !== canonicalVersion) continue;
+
+    fs.rmSync(zodDir, { recursive: true, force: true });
+    fs.mkdirSync(path.dirname(zodDir), { recursive: true });
+    if (process.platform === "win32") fs.symlinkSync(canonical, zodDir, "junction");
+    else fs.symlinkSync(path.relative(path.dirname(zodDir), canonical), zodDir, "dir");
+
+    linked++;
+  }
+
+  if (linked) dbg(`deduped nested zod (${linked} under @n8n/* -> n8n-workflow)`);
+}
+
 async function extractNodeModules(): Promise<void> {
   dbg("decompressing xz and extracting tar, this may take a while...");
 
@@ -179,6 +204,7 @@ async function extractNodeModules(): Promise<void> {
   await new Promise<void>((resolve, reject) => {
     extract.on("finish", () => {
       try {
+        dedupeNestedZod(nodeModulesDir);
         setupPythonTaskRunner();
         resolve();
       } catch (err) {

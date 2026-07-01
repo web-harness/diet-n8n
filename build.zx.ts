@@ -239,7 +239,8 @@ async function dedupeNestedZod(nodeModulesDir: string) {
 
     await fs.promises.rm(zodDir, { recursive: true, force: true });
     await fs.promises.mkdir(path.dirname(zodDir), { recursive: true });
-    await fs.promises.symlink(path.relative(path.dirname(zodDir), canonical), zodDir, "dir");
+    if (process.platform === "win32") await fs.promises.symlink(canonical, zodDir, "junction");
+    else await fs.promises.symlink(path.relative(path.dirname(zodDir), canonical), zodDir, "dir");
     linked++;
   }
 
